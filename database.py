@@ -7,10 +7,8 @@ import pandas as pd
 from config import DATABASE_PATH
 
 def get_connection() -> sqlite3.Connection:
-    """
-    Veritabanına bağlantı açar. FOREIGN KEY kısıtlamalarının çalışması için PRAGMA ayarını da burada aktif eder 
-    -SQLite'ta bu varsayılan olarak KAPALIDIR, her bağlantıda ayrıca açılması gerekir.
-    """
+    """Veritabanına bağlantı açar. FOREIGN KEY kısıtlamalarının çalışması için PRAGMA ayarını da burada aktif eder 
+    -SQLite'ta bu varsayılan olarak KAPALIDIR, her bağlantıda ayrıca açılması gerekir."""
     conn = sqlite3.connect(DATABASE_PATH)
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -58,9 +56,7 @@ def create_tables():
     print("Tablolar hazır.")
 
 def save_pivot_stats(ticker: str, stats: dict):
-    """
-    Aynı ticker için önceki kayıtları önce silinir, böylece backtest tekrar çalıştırdığında veri çoğalmaz, güncellenir.
-    """
+    """Aynı ticker için önceki kayıtları önce silinir, böylece backtest tekrar çalıştırdığında veri çoğalmaz, güncellenir."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -85,9 +81,8 @@ def save_pivot_stats(ticker: str, stats: dict):
     conn.close()
 
 def save_confluence_zones(ticker: str, zones: list):
-    """
-    Aynı ticker için önceki zonelar silinir -ancak önce contributorsın silinmesi gerekir. (foreign key kısıtlaması onları zonesdan önce silinmesini zorunlu kılar).
-    """
+    """Aynı ticker için önceki zonelar silinir -ancak önce contributorsın silinmesi gerekir. 
+    (foreign key kısıtlaması onları zonesdan önce silinmesini zorunlu kılar)."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -116,9 +111,7 @@ def save_confluence_zones(ticker: str, zones: list):
     conn.close()
 
 def get_pivot_stats(ticker: str) -> pd.DataFrame:
-    """
-    Bir hissenin tüm pivot_stats satırlarını pandas DataFrame olarak döner.
-    """
+    """Bir hissenin tüm pivot_stats satırlarını pandas DataFrame olarak döner."""
     conn = get_connection()
     df = pd.read_sql_query(
         "SELECT * FROM pivot_stats WHERE ticker = ?", conn, params=(ticker,)
@@ -127,11 +120,9 @@ def get_pivot_stats(ticker: str) -> pd.DataFrame:
     return df
 
 def get_confluence_zones(ticker: str) -> pd.DataFrame:
-    """
-    Bir hissenin confluence zone'larını, contributors detayıyla BİRLİKTE döner (JOIN). 
+    """Bir hissenin confluence zone'larını, contributors detayıyla BİRLİKTE döner (JOIN). 
     İki tablo zone_id üzerinden birleştirilir, böylece her satırda hem zone'un özeti 
-    (center, method_count) hem de o satıra ait tek bir contributor bilgisi bulunur.
-    """
+    (center, method_count) hem de o satıra ait tek bir contributor bilgisi bulunur."""
     conn = get_connection()
     df = pd.read_sql_query("""
         SELECT

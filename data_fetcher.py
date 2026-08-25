@@ -5,9 +5,7 @@ from datetime import datetime, timedelta
 from config import BACKTEST_YEARS
 
 def get_stock_data(ticker: str, years: int = BACKTEST_YEARS) -> pd.DataFrame:
-    """
-    Spesifik bir hisse için veri çekilir.
-    """
+    """Spesifik bir hisse için veri çekilir."""
     end_date = datetime.today()
     start_date = end_date - timedelta(days=years * 365)
 
@@ -34,9 +32,7 @@ def get_stock_data(ticker: str, years: int = BACKTEST_YEARS) -> pd.DataFrame:
         return pd.DataFrame()
 
 def get_multiple_stocks_data(tickers: list) -> dict:
-    """
-    Birden fazla hisse için veri çekilir.
-    """
+    """Birden fazla hisse için veri çekilir."""
     result = {}
     for ticker in tickers:
         print(f"{ticker} verisi çekiliyor...")

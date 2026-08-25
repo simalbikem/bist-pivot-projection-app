@@ -1,2 +1,1 @@
 # bist-pivot-projection-app
-BIST Pivot Nokta Tabanlı Hisse Projeksiyon Sistemi, Borsa İstanbul’da işlem gören hisselerin mum grafik verilerini analiz ederek pivot nokta tabanlı destek ve direnç seviyeleri üreten bir teknik analiz uygulamasıdır. Sistem; günlük, haftalık ve aylık fiyat verilerinden Klasik, Fibonacci, Camarilla ve DeMark gibi farklı pivot hesaplama yöntemlerini kullanarak olası fiyat bölgelerini belirler.
