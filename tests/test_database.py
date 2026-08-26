@@ -224,3 +224,113 @@ def test_save_and_get_confluence_zones_respects_timeframe(temp_db):
     assert len(weekly_df) == 3
     assert (daily_df["timeframe"] == "daily").all()
     assert (weekly_df["timeframe"] == "weekly").all()
+
+# ---------------------------------------------------------
+# get_last_update_time testleri
+# ---------------------------------------------------------
+def test_get_last_update_time_returns_none_when_no_data(temp_db):
+    """Hiç veri kaydedilmemiş bir ticker+timeframe için None dönmesi gerekir."""
+    from database import get_last_update_time
+
+    result = get_last_update_time("HIC_YOK.IS", timeframe="daily")
+
+    assert result is None
+
+def test_get_last_update_time_returns_timestamp_after_save(temp_db):
+    """save_pivot_stats çağrıldıktan sonra, get_last_update_time'ın None olmayan bir zaman damgası döndürdüğünü doğrular."""
+    from database import get_last_update_time
+
+    sample_stats = {"classic": {"PP": {
+        "touch_probability": 0.5, "break_probability": None,
+        "break_up_probability": 0.3, "break_down_probability": 0.2, "sample_size": 100,
+    }}}
+
+    save_pivot_stats("TEST.IS", sample_stats, timeframe="daily")
+    result = get_last_update_time("TEST.IS", timeframe="daily")
+
+    assert result is not None
+    # Format kontrolü: "YYYY-MM-DD HH:MM:SS" şeklinde olmalı
+    assert len(result) == 19
+    assert result[4] == "-" and result[7] == "-" and result[10] == " "
+
+def test_get_last_update_time_updates_on_resave(temp_db):
+    import time
+    from database import get_last_update_time
+
+    sample_stats = {"classic": {"PP": {
+        "touch_probability": 0.5, "break_probability": None,
+        "break_up_probability": 0.3, "break_down_probability": 0.2, "sample_size": 100,
+    }}}
+
+    save_pivot_stats("TEST.IS", sample_stats, timeframe="daily")
+    ilk_zaman = get_last_update_time("TEST.IS", timeframe="daily")
+
+    time.sleep(1.1)  # SQLite'ın saniye hassasiyetli CURRENT_TIMESTAMP'i için yeterli bekleme
+
+    save_pivot_stats("TEST.IS", sample_stats, timeframe="daily")
+    ikinci_zaman = get_last_update_time("TEST.IS", timeframe="daily")
+
+    assert ikinci_zaman != ilk_zaman
+    assert ikinci_zaman > ilk_zaman  # ISO formatlı string karşılaştırması kronolojik sıraya denk gelir
+
+def test_get_last_update_time_is_independent_per_timeframe(temp_db):
+    """Bir ticker'ın 'daily' verisi güncellendiğinde, aynı ticker'ın 'weekly' verisinin zaman damgasının ETKİLENMEDİĞİNİ doğrular 
+    -timeframe bazlı izolasyonun bu fonksiyon için de geçerli olduğunukanıtlar."""
+    import time
+    from database import get_last_update_time
+
+    sample_stats = {"classic": {"PP": {
+        "touch_probability": 0.5, "break_probability": None,
+        "break_up_probability": 0.3, "break_down_probability": 0.2, "sample_size": 100,
+    }}}
+
+    save_pivot_stats("TEST.IS", sample_stats, timeframe="weekly")
+    weekly_zaman_once = get_last_update_time("TEST.IS", timeframe="weekly")
+
+    time.sleep(1.1)
+
+    save_pivot_stats("TEST.IS", sample_stats, timeframe="daily")
+    weekly_zaman_sonra = get_last_update_time("TEST.IS", timeframe="weekly")
+
+    assert weekly_zaman_once == weekly_zaman_sonra  # daily güncellemesi weekly'yi etkilememeli
+
+def test_get_last_update_time_survives_schema_migration(tmp_path, monkeypatch):
+    """Migration'dan geçmiş bir tabloda bile, yeni bir save_pivot_stats çağrısının doğru zaman damgası ürettiğini doğrular. 
+    Bu, daha önce bulduğumuz ve düzelttiğimiz 'migration sonrası NULL kalma' hatasının kalıcı regresyon testidir."""
+    import sqlite3
+    from database import get_last_update_time
+
+    test_db_path = tmp_path / "eski_sema_migration.db"
+    monkeypatch.setattr(database, "DATABASE_PATH", str(test_db_path))
+
+    conn = sqlite3.connect(str(test_db_path))
+    conn.execute("""
+        CREATE TABLE pivot_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, method TEXT NOT NULL, level_name TEXT NOT NULL,
+            timeframe TEXT NOT NULL DEFAULT 'daily',
+            touch_probability REAL, break_probability REAL,
+            break_up_probability REAL, break_down_probability REAL, sample_size INTEGER
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE confluence_zones (
+            zone_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, timeframe TEXT NOT NULL DEFAULT 'daily',
+            center REAL NOT NULL, method_count INTEGER NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+    create_tables()  # migrationlar tetiklenir
+
+    sample_stats = {"classic": {"PP": {
+        "touch_probability": 0.5, "break_probability": None,
+        "break_up_probability": 0.3, "break_down_probability": 0.2, "sample_size": 100,
+    }}}
+    save_pivot_stats("YENI_KAYIT.IS", sample_stats, timeframe="daily")
+
+    result = get_last_update_time("YENI_KAYIT.IS", timeframe="daily")
+
+    assert result is not None 

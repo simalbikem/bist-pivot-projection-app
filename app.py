@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
 
-from config import BIST_STOCKS, PIVOT_METHODS, TIMEFRAMES
+from config import BIST_STOCKS, PIVOT_METHODS, TIMEFRAMES, LOW_SAMPLE_SIZE_THRESHOLD
 from data_fetcher import get_stock_data, resample_to_timeframe
 from pivot_calculations import calculate_all_pivots
-from database import get_pivot_stats, get_confluence_zones
+from database import get_pivot_stats, get_confluence_zones, get_last_update_time
 from charts import plot_candlestick_with_pivots, plot_confluence_zones
 
 st.set_page_config(page_title="BIST Pivot Projection System", layout="wide")
@@ -38,13 +38,19 @@ timeframe = st.sidebar.selectbox("Timeframe", TIMEFRAMES, format_func=str.capita
 method = st.sidebar.selectbox("The Pivot Method", PIVOT_METHODS, format_func=str.capitalize)
 periods_to_show = st.sidebar.slider("Periods to Show in Chart", 7, 180, 365)
 
+last_update = get_last_update_time(ticker, timeframe)
+if last_update:
+    st.sidebar.caption(f"🕒Last updated: {last_update}")
+else:
+    st.sidebar.caption("🕒No backtest data yet for this stock/timeframe.")
+
 # ---------------------------------------------------------
 # Başlık - yasal uyarı
 # ---------------------------------------------------------
 st.title("📊BIST Pivot Point Based Stock Projection System")
 
 st.warning(
-    "⚠️ This system doesn't provide investment advice."
+    "⚠️ This system doesn't provide investment advice. "
     "Pivot levels are statistically calculated potential support/resistance zones; we don't guarantee specific price levels."
 )
 
@@ -72,6 +78,15 @@ pivots = calculate_all_pivots(
     prev_low=prev_row["Low"], prev_close=prev_row["Close"],
     today_open=today_row["Open"],
 )
+
+# ---------------------------------------------------------
+# Hızlı bakış: tüm 5 yöntemin PP değeri yan yana
+# ---------------------------------------------------------
+st.subheader("Quick Overview(PP)")
+pp_cols = st.columns(len(pivots))
+for col, (method_name, levels) in zip(pp_cols, pivots.items()):
+    with col:
+        st.metric(label=method_name.capitalize(), value=f"{levels['PP']:.2f}")
 
 # ---------------------------------------------------------
 # Sekmeler
@@ -121,12 +136,25 @@ with tab3:
     else:
         method_stats = stats_df[stats_df["method"] == method].copy()
 
+        # Herhangi bir seviyenin örneklem boyutu eşiğin altındaysa, kullanıcıyı güvenilirlik konusunda bilgilendir.
+        min_sample = method_stats["sample_size"].min()
+        if min_sample < LOW_SAMPLE_SIZE_THRESHOLD:
+            st.warning(
+                f"⚠️Low sample size detected. "
+                f"Statistics based on fewer than {LOW_SAMPLE_SIZE_THRESHOLD} observations may be less reliable."
+            )
+
         for col in ["touch_probability", "break_probability", "break_up_probability", "break_down_probability"]:
             method_stats[col] = (method_stats[col] * 100).round(1)
 
+        # Sample Size sütununda düşük değerleri görsel olarak işaretle
+        method_stats["sample_size_display"] = method_stats["sample_size"].apply(
+            lambda n: f"⚠️ {n}" if n < LOW_SAMPLE_SIZE_THRESHOLD else str(n)
+        )
+
         display_cols = [
             "level_name", "touch_probability", "break_probability",
-            "break_up_probability", "break_down_probability", "sample_size",
+            "break_up_probability", "break_down_probability", "sample_size_display",
         ]
         st.dataframe(
             method_stats[display_cols].rename(columns={
@@ -135,7 +163,7 @@ with tab3:
                 "break_probability": "Break %",
                 "break_up_probability": "Break Up %",
                 "break_down_probability": "Break Down %",
-                "sample_size": "Sample Size",
+                "sample_size_display": "Sample Size",
             }),
             hide_index=True,
             use_container_width=True,

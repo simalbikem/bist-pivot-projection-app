@@ -116,4 +116,6 @@ BREAK_THRESHOLD_PCT = 0.002
 # Confluence zone: farklı yöntemlerden gelen pivot seviyelerinin, birbirine bu yüzde kadar yakın olması durumunda "confluence" sayılmasıdır.
 CONFLUENCE_TOLERANCE_PCT = 0.003
 
+LOW_SAMPLE_SIZE_THRESHOLD = 30
+
 DATABASE_PATH = "data/bist_pivot.db"

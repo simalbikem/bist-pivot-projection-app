@@ -20,15 +20,9 @@ def _column_exists(cursor, table_name: str, column_name: str) -> bool:
     return column_name in columns
 
 def migrate_add_timeframe_column():
-    """
-    MIGRATION: pivot_stats ve confluence_zones tablolarına 'timeframe'
-    sütunu ekler (yoksa). Mevcut tüm satırlar otomatik olarak
-    timeframe='daily' değerini alır - bu, o veriler zaten günlük
-    veriyle üretildiği için doğru bir varsayılan.
-
-    İDEMPOTENT: Bu fonksiyon güvenle birden fazla kez çalıştırılabilir -
-    sütun zaten varsa hiçbir şey yapmaz, hata fırlatmaz.
-    """
+    """MIGRATION: pivot_stats ve confluence_zones tablolarına 'timeframe' sütunu ekler(yoksa). 
+    Mevcut tüm satırlar otomatik olarak timeframe='daily' değerini alır 
+    -bu, o veriler zaten günlük veriyle üretildiği için doğru bir varsayılan."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -40,6 +34,20 @@ def migrate_add_timeframe_column():
                 f"ALTER TABLE {table} ADD COLUMN timeframe TEXT NOT NULL DEFAULT 'daily'"
             )
             print(f"  {table}: 'timeframe' sütunu eklendi (mevcut satırlar 'daily' aldı).")
+
+    conn.commit()
+    conn.close()
+
+def migrate_add_updated_at_column():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    if _column_exists(cursor, "pivot_stats", "updated_at"):
+        print("  pivot_stats: 'updated_at' sütunu zaten var, atlanıyor.")
+    else:
+        cursor.execute("ALTER TABLE pivot_stats ADD COLUMN updated_at TEXT")
+        cursor.execute("UPDATE pivot_stats SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL")
+        print("  pivot_stats: 'updated_at' sütunu eklendi (mevcut satırlar şu anki zamanı aldı).")
 
     conn.commit()
     conn.close()
@@ -59,7 +67,8 @@ def create_tables():
             break_probability REAL,
             break_up_probability REAL,
             break_down_probability REAL,
-            sample_size INTEGER
+            sample_size INTEGER,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -91,11 +100,12 @@ def create_tables():
     # Var olan veritabanlarında sütun eksikse otomatik ekler.
     # Yeni oluşturulan veritabanlarında CREATE TABLE zaten sütunu içerdiği için bu fonksiyon onlarda değişiklik yapmaz (idempotent).
     migrate_add_timeframe_column()
+    migrate_add_updated_at_column()
 
 def save_pivot_stats(ticker: str, stats: dict, timeframe: str = "daily"):
     """Aynı ticker + timeframe kombinasyonu için önceki kayıtlar önce silinir, 
     böylece backtest tekrar çalıştırdığında veri çoğalmaz, güncellenir. 
-    Farklı timeframe'lerin (örn. daily ve weekly) birbirini silmemesi için WHERE koşuluna timeframe da eklenmiştir."""
+    Farklı timeframelerin birbirini silmemesi için WHERE koşuluna timeframe da eklenmiştir."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -110,8 +120,8 @@ def save_pivot_stats(ticker: str, stats: dict, timeframe: str = "daily"):
                 INSERT INTO pivot_stats
                     (ticker, method, level_name, timeframe, touch_probability,
                      break_probability, break_up_probability,
-                     break_down_probability, sample_size)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     break_down_probability, sample_size, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (
                 ticker, method, level_name, timeframe,
                 s["touch_probability"], s["break_probability"],
@@ -190,6 +200,17 @@ def get_confluence_zones(ticker: str, timeframe: str = "daily") -> pd.DataFrame:
     """, conn, params=(ticker, timeframe))
     conn.close()
     return df
+
+def get_last_update_time(ticker: str, timeframe: str = "daily") -> str | None:
+    """Belirtilen ticker + timeframe kombinasyonu için pivot_stats
+    tablosundaki en son güncelleme zamanını döner."""
+    conn = get_connection()
+    result = conn.execute(
+        "SELECT MAX(updated_at) FROM pivot_stats WHERE ticker = ? AND timeframe = ?",
+        (ticker, timeframe),
+    ).fetchone()
+    conn.close()
+    return result[0] if result and result[0] is not None else None
 
 # Hızlı test 
 if __name__ == "__main__":
