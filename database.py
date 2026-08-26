@@ -212,6 +212,38 @@ def get_last_update_time(ticker: str, timeframe: str = "daily") -> str | None:
     conn.close()
     return result[0] if result and result[0] is not None else None
 
+def screen_by_touch_probability(
+    timeframe: str, method: str, level_name: str, min_touch_pct: float
+) -> pd.DataFrame:
+    """Belirtilen timeframe/method/level_name kombinasyonunda, touch olasılığı min_touch_pct'ten büyük 
+    veya eşit olan tüm hisseleri tarar ve touch olasılığına göre büyükten küçüğe sıralı döner."""
+    conn = get_connection()
+    df = pd.read_sql_query("""
+        SELECT ticker, touch_probability, break_probability,
+               break_up_probability, break_down_probability, sample_size
+        FROM pivot_stats
+        WHERE timeframe = ? AND method = ? AND level_name = ? AND touch_probability >= ?
+        ORDER BY touch_probability DESC
+    """, conn, params=(timeframe, method, level_name, min_touch_pct))
+    conn.close()
+    return df
+
+def screen_by_confluence(timeframe: str, min_method_count: int) -> pd.DataFrame:
+    """Belirtilen timeframede, en az bir confluence zone'u min_method_count veya daha fazla yönteme sahip olan tüm hisseleri tarar. 
+    Her hisse için en güçlü (en çok yöntemli) zone'unu ve kaç zone'a sahip olduğunu gösterir."""
+    conn = get_connection()
+    df = pd.read_sql_query("""
+        SELECT ticker,
+               MAX(method_count) as max_method_count,
+               COUNT(*) as zone_count
+        FROM confluence_zones
+        WHERE timeframe = ? AND method_count >= ?
+        GROUP BY ticker
+        ORDER BY max_method_count DESC, zone_count DESC
+    """, conn, params=(timeframe, min_method_count))
+    conn.close()
+    return df
+
 # Hızlı test 
 if __name__ == "__main__":
     from config import BIST_STOCKS

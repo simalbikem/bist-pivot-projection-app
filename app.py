@@ -4,7 +4,10 @@ import pandas as pd
 from config import BIST_STOCKS, PIVOT_METHODS, TIMEFRAMES, LOW_SAMPLE_SIZE_THRESHOLD
 from data_fetcher import get_stock_data, resample_to_timeframe
 from pivot_calculations import calculate_all_pivots
-from database import get_pivot_stats, get_confluence_zones, get_last_update_time
+from database import (
+    get_pivot_stats, get_confluence_zones, get_last_update_time,
+    screen_by_touch_probability, screen_by_confluence,
+)
 from charts import plot_candlestick_with_pivots, plot_confluence_zones
 
 st.set_page_config(page_title="BIST Pivot Projection System", layout="wide")
@@ -36,7 +39,7 @@ st.sidebar.title("Settings")
 ticker = st.sidebar.selectbox("Select Stock", BIST_STOCKS)
 timeframe = st.sidebar.selectbox("Timeframe", TIMEFRAMES, format_func=str.capitalize)
 method = st.sidebar.selectbox("The Pivot Method", PIVOT_METHODS, format_func=str.capitalize)
-periods_to_show = st.sidebar.slider("Periods to Show in Chart", 7, 180, 365)
+periods_to_show = st.sidebar.slider("Periods to Show in Chart", 7, 365, 180)
 
 last_update = get_last_update_time(ticker, timeframe)
 if last_update:
@@ -91,7 +94,7 @@ for col, (method_name, levels) in zip(pp_cols, pivots.items()):
 # ---------------------------------------------------------
 # Sekmeler
 # ---------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["📈Pivot Graph", "🎯 Confluence Zones", "📊 Backtest Statistics"])
+tab1, tab2, tab3, tab4 = st.tabs(["📈Pivot Graph", "🎯 Confluence Zones", "📊 Backtest Statistics", "🔍 Screener"])
 
 with tab1:
     st.subheader(f"{ticker} - {method.capitalize()} Pivot Levels ({timeframe.capitalize()})")
@@ -168,3 +171,72 @@ with tab3:
             hide_index=True,
             use_container_width=True,
         )
+
+with tab4:
+    st.subheader("Stock Screener")
+
+    screener_mode = st.radio(
+        "Screening Mode",
+        ["Touch/Break Probability", "Confluence Strength"],
+        horizontal=True,
+    )
+
+    screener_timeframe = st.selectbox(
+        "Timeframe for Screening", TIMEFRAMES, format_func=str.capitalize, key="screener_tf"
+    )
+
+    if screener_mode == "Touch/Break Probability":
+        col1, col2 = st.columns(2)
+        with col1:
+            screener_method = st.selectbox(
+                "Method", PIVOT_METHODS, format_func=str.capitalize, key="screener_method"
+            )
+        with col2:
+            screener_level = st.selectbox(
+                "Level", ["PP", "R1", "R2", "R3", "S1", "S2", "S3"], key="screener_level"
+            )
+        min_touch = st.slider("Minimum Touch Probability (%)", 0, 100, 50, key="screener_touch") / 100
+
+        results = screen_by_touch_probability(
+            timeframe=screener_timeframe, method=screener_method,
+            level_name=screener_level, min_touch_pct=min_touch,
+        )
+
+        if results.empty:
+            st.info("No stocks match this criteria. Try lowering the threshold.")
+        else:
+            st.success(f"{len(results)} stocks found, sorted by touch probability.")
+            display = results.copy()
+            for col in ["touch_probability", "break_probability", "break_up_probability", "break_down_probability"]:
+                display[col] = (display[col] * 100).round(1)
+            st.dataframe(
+                display.rename(columns={
+                    "ticker": "Ticker", "touch_probability": "Touch %",
+                    "break_probability": "Break %", "break_up_probability": "Break Up %",
+                    "break_down_probability": "Break Down %", "sample_size": "Sample Size",
+                }),
+                hide_index=True, use_container_width=True,
+            )
+
+    else:  # Confluence Strength
+        min_methods = st.slider(
+            "Minimum Number of Contributing Methods", 2, 5, 4, key="screener_min_methods"
+        )
+        st.caption(
+            "Note: Lower thresholds(2-3) will match most stocks since pivot levels across methods often fall close together." 
+            " Higher thresholds(4-5) yield more selective, potentially more meaningful results."
+        )
+
+        results = screen_by_confluence(timeframe=screener_timeframe, min_method_count=min_methods)
+
+        if results.empty:
+            st.info("No stocks match this criteria. Try lowering the minimum method count.")
+        else:
+            st.success(f"{len(results)} stocks found, sorted by confluence strength.")
+            st.dataframe(
+                results.rename(columns={
+                    "ticker": "Ticker", "max_method_count": "Max Methods in a Zone",
+                    "zone_count": "Number of Qualifying Zones",
+                }),
+                hide_index=True, use_container_width=True,
+            )
