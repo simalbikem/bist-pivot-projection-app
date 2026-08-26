@@ -33,7 +33,7 @@ def plot_candlestick_with_pivots(
         high=recent_df["High"],
         low=recent_df["Low"],
         close=recent_df["Close"],
-        name="Fiyat",
+        name="Price",
     ))
 
     # Seçilen yöntemin seviyelerini yatay çizgi olarak ekler
@@ -50,9 +50,9 @@ def plot_candlestick_with_pivots(
         )
 
     fig.update_layout(
-        title=f"{ticker} - {method.capitalize()} Pivot Seviyeleri",
-        xaxis_title="Tarih",
-        yaxis_title="Fiyat",
+        title=f"{ticker} - {method.capitalize()} Pivot Levels",
+        xaxis_title="Date",
+        yaxis_title="Price",
         xaxis_rangeslider_visible=False,  # alt kaydırma çubuğunu kapat, sade görünüm
         height=600,
     )
@@ -78,7 +78,7 @@ def plot_confluence_zones(
         high=recent_df["High"],
         low=recent_df["Low"],
         close=recent_df["Close"],
-        name="Fiyat",
+        name="Price",
     ))
 
     if zones:
@@ -89,25 +89,42 @@ def plot_confluence_zones(
     for zone in zones:
         values = [c["value"] for c in zone["contributors"]]
         y0, y1 = min(values), max(values)
+        center = (y0 + y1) / 2
 
-        # Daha fazla yöntem içeren zone -> daha yüksek opaklık
         opacity = 0.15 + 0.35 * (zone["method_count"] / max_methods)
-
-        methods_str = ", ".join(sorted({c["method"] for c in zone["contributors"]}))
 
         fig.add_hrect(
             y0=y0, y1=y1,
             fillcolor="orange",
             opacity=opacity,
             line_width=0,
-            annotation_text=f"{zone['method_count']} yöntem: {methods_str}",
-            annotation_position="top left",
         )
 
+    # Sabit metin etiketleri yerine hover (üzerine gelince gösterme)
+    # kullanıyoruz - böylece zone'lar birbirine ne kadar yakın olursa
+    # olsun etiketler asla üst üste binmez. methods_str'de .capitalize()
+    # kullanıyoruz: veri (c["method"]) küçük harfli kalmaya devam ediyor,
+    # sadece kullanıcıya gösterilen metin büyük harfle başlıyor.
+    for zone in zones:
+        values = [c["value"] for c in zone["contributors"]]
+        y0, y1 = min(values), max(values)
+        center = (y0 + y1) / 2
+        methods_str = ", ".join(sorted({c["method"].capitalize() for c in zone["contributors"]}))
+
+        fig.add_trace(go.Scatter(
+            x=recent_df.index,
+            y=[center] * len(recent_df.index),
+            mode="lines",
+            line=dict(width=0),
+            hoverinfo="text",
+            hovertext=f"{zone['method_count']} method: {methods_str}",
+            showlegend=False,
+        ))
+
     fig.update_layout(
-        title=f"{ticker} - Confluence Zone'lar",
-        xaxis_title="Tarih",
-        yaxis_title="Fiyat",
+        title=f"{ticker} - Confluence Zones",
+        xaxis_title="Date",
+        yaxis_title="Price",
         xaxis_rangeslider_visible=False,
         height=600,
     )

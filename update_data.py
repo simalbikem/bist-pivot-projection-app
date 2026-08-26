@@ -1,9 +1,3 @@
-"""
-Bu script Streamlit arayüzünden ayrı tutulmaktadır, çünkü:
-    - Backtest hesaplaması (2 yıllık veri x 8 hisse) birkaç dakika sürebilir.
-    - Streamlit her açıldığında bunu yeniden hesaplamak kullanıcı deneyimini yavaşlatır.
-    - Verinin ne zaman güncellenebileceği kontrol edilebilir.
-"""
 from config import BIST_STOCKS
 from data_fetcher import get_stock_data
 from pivot_calculations import calculate_all_pivots
@@ -12,10 +6,8 @@ from backtester import backtest_stock
 from database import create_tables, save_pivot_stats, save_confluence_zones
 
 def update_single_stock(ticker: str) -> bool:
-    """Tek bir hisse için backtest + confluence hesaplanıp kayıt edilir."""
-    print(f"\n{'='*50}")
-    print(f"{ticker} işleniyor...")
-    print(f"{'='*50}")
+    """Tek bir hisse için backtest + confluence değerini hesaplayıp kaydeder."""
+    print(f"{ticker}:")
 
     # --- 1. Backtest ---
     stats = backtest_stock(ticker)
@@ -52,8 +44,10 @@ def update_all_stocks():
 
     basarili = []
     basarisiz = []
+    total = len(BIST_STOCKS)
 
-    for ticker in BIST_STOCKS:
+    for i, ticker in enumerate(BIST_STOCKS, start=1):
+        print(f"\n[{i}/{total}] ", end="")
         try:
             if update_single_stock(ticker):
                 basarili.append(ticker)
@@ -66,9 +60,9 @@ def update_all_stocks():
     print(f"\n{'='*50}")
     print("ÖZET")
     print(f"{'='*50}")
-    print(f"Başarılı: {len(basarili)}/{len(BIST_STOCKS)} -> {basarili}")
+    print(f"Başarılı: {len(basarili)}/{total}")
     if basarisiz:
-        print(f"Başarısız: {basarisiz}")
+        print(f"Başarısız ({len(basarisiz)}): {basarisiz}")
 
 if __name__ == "__main__":
     update_all_stocks()
