@@ -7,6 +7,7 @@
 """
 import pandas as pd
 import pytest
+import sqlite3
 
 import database
 from database import (
@@ -129,3 +130,97 @@ def test_save_confluence_zones_overwrites_previous_data(temp_db):
 
     assert len(df) == 2  # eski 2 satır değil, sadece yeni 2 satır
     assert set(df["method"]) == {"woodie", "demark"}  # eski yöntemler yok
+
+# ---------------------------------------------------------
+# Migration ve timeframe desteği testleri
+# ---------------------------------------------------------
+def test_migrate_add_timeframe_column_adds_missing_column(tmp_path, monkeypatch):
+    """migrate_add_timeframe_column'ın, timeframe sütunu İÇERMEYEN eski şemalı bir tabloya bu sütunu doğru şekilde eklediğini doğrular."""
+    test_db_path = tmp_path / "eski_sema.db"
+    monkeypatch.setattr(database, "DATABASE_PATH", str(test_db_path))
+
+    conn = sqlite3.connect(str(test_db_path))
+    conn.execute("""
+        CREATE TABLE pivot_stats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, method TEXT NOT NULL, level_name TEXT NOT NULL,
+            touch_probability REAL, break_probability REAL,
+            break_up_probability REAL, break_down_probability REAL, sample_size INTEGER
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE confluence_zones (
+            zone_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL, center REAL NOT NULL, method_count INTEGER NOT NULL
+        )
+    """)
+    conn.execute(
+        "INSERT INTO pivot_stats (ticker, method, level_name, touch_probability, sample_size) "
+        "VALUES ('ESKI.IS', 'classic', 'PP', 0.5, 100)"
+    )
+    conn.commit()
+    conn.close()
+
+    create_tables()
+
+    conn = database.get_connection()
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(pivot_stats)").fetchall()]
+    assert "timeframe" in cols
+
+    eski_satir = conn.execute(
+        "SELECT timeframe FROM pivot_stats WHERE ticker = 'ESKI.IS'"
+    ).fetchone()
+    assert eski_satir[0] == "daily"
+    conn.close()
+
+def test_migrate_add_timeframe_column_is_idempotent(temp_db):
+    """migrate_add_timeframe_columnın art arda 2 kez çağrılmasının hata fırlatmadığını doğrular."""
+    from database import migrate_add_timeframe_column
+
+    migrate_add_timeframe_column()
+    migrate_add_timeframe_column()
+
+def test_save_and_get_pivot_stats_respects_timeframe(temp_db):
+    """Aynı ticker için farklı timeframelerde kaydedilen verilerin birbirini SİLMEDİĞİNİ doğrular."""
+    daily_stats = {"classic": {"PP": {
+        "touch_probability": 0.5, "break_probability": None,
+        "break_up_probability": 0.3, "break_down_probability": 0.2, "sample_size": 500,
+    }}}
+    weekly_stats = {"classic": {"PP": {
+        "touch_probability": 0.7, "break_probability": None,
+        "break_up_probability": 0.4, "break_down_probability": 0.3, "sample_size": 100,
+    }}}
+
+    save_pivot_stats("TEST.IS", daily_stats, timeframe="daily")
+    save_pivot_stats("TEST.IS", weekly_stats, timeframe="weekly")
+
+    daily_df = get_pivot_stats("TEST.IS", timeframe="daily")
+    weekly_df = get_pivot_stats("TEST.IS", timeframe="weekly")
+
+    assert len(daily_df) == 1
+    assert len(weekly_df) == 1
+    assert daily_df.iloc[0]["sample_size"] == 500
+    assert weekly_df.iloc[0]["sample_size"] == 100
+
+def test_save_and_get_confluence_zones_respects_timeframe(temp_db):
+    """Confluence zoneların da timeframe bazında ayrı tutulduğunu doğrular."""
+    daily_zones = [{"center": 100.0, "method_count": 2, "contributors": [
+        {"method": "classic", "level": "PP", "value": 100.0},
+        {"method": "fibonacci", "level": "PP", "value": 100.1},
+    ]}]
+    weekly_zones = [{"center": 200.0, "method_count": 3, "contributors": [
+        {"method": "classic", "level": "R1", "value": 200.0},
+        {"method": "fibonacci", "level": "R1", "value": 200.1},
+        {"method": "woodie", "level": "R1", "value": 200.2},
+    ]}]
+
+    save_confluence_zones("TEST.IS", daily_zones, timeframe="daily")
+    save_confluence_zones("TEST.IS", weekly_zones, timeframe="weekly")
+
+    daily_df = get_confluence_zones("TEST.IS", timeframe="daily")
+    weekly_df = get_confluence_zones("TEST.IS", timeframe="weekly")
+
+    assert len(daily_df) == 2
+    assert len(weekly_df) == 3
+    assert (daily_df["timeframe"] == "daily").all()
+    assert (weekly_df["timeframe"] == "weekly").all()

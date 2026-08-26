@@ -105,6 +105,8 @@ BACKTEST_YEARS = 2
 
 PIVOT_METHODS = ["classic", "fibonacci", "camarilla", "demark", "woodie"]
 
+TIMEFRAMES = ["daily", "weekly", "monthly"]
+
 # "Touch": fiyatın pivot seviyesine ne kadar yaklaştığıdır.
 TOUCH_THRESHOLD_PCT = 0.001
 

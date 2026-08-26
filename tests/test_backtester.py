@@ -160,3 +160,52 @@ def test_backtest_stock_returns_empty_dict_when_insufficient_rows(monkeypatch):
     result = backtest_stock("AZ_VERI.IS")
 
     assert result == {}
+
+# ---------------------------------------------------------
+# raw_df parametresi ve timeframe desteği testleri
+# ---------------------------------------------------------
+def test_backtest_stock_uses_provided_raw_df_without_fetching(monkeypatch):
+    """raw_df verildiğinde, backtest_stock'un get_stock_data'yı HİÇ çağırmadığını doğrular"""
+    def get_stock_data_should_not_be_called(ticker):
+        raise AssertionError("get_stock_data çağrılmamalıydı, raw_df verilmişti!")
+
+    monkeypatch.setattr(backtester, "get_stock_data", get_stock_data_should_not_be_called)
+
+    sahte_veri = _elle_hesaplanmis_ohlc_tablosu()
+    # Hata fırlamazsa, get_stock_data hiç çağrılmamış demektir.
+    result = backtest_stock("HERHANGI.IS", raw_df=sahte_veri)
+
+    assert result != {}
+
+def test_backtest_stock_without_raw_df_calls_get_stock_data(monkeypatch):
+    """raw_df verilmediğinde (varsayılan davranış), backtest_stock'un get_stock_data'yı çağırdığını doğrular -geriye dönük uyumluluk."""
+    cagrildi = {"durum": False}
+
+    def sahte_get_stock_data(ticker):
+        cagrildi["durum"] = True
+        return _elle_hesaplanmis_ohlc_tablosu()
+
+    monkeypatch.setattr(backtester, "get_stock_data", sahte_get_stock_data)
+
+    backtest_stock("HERHANGI.IS")  # raw_df verilmedi
+
+    assert cagrildi["durum"] is True
+
+def test_backtest_stock_weekly_timeframe_produces_fewer_samples_than_daily():
+    """Aynı ham veriden, weekly timeframe'in daily'den daha az sample_size) 
+    ürettiğini doğrular -resample'ın gerçekten uygulandığının kanıtıdır."""
+    gun_sayisi = 60
+    uzun_veri = pd.DataFrame({
+        "Open": [100.0 + i for i in range(gun_sayisi)],
+        "High": [105.0 + i for i in range(gun_sayisi)],
+        "Low": [95.0 + i for i in range(gun_sayisi)],
+        "Close": [102.0 + i for i in range(gun_sayisi)],
+    }, index=pd.date_range("2026-01-01", periods=gun_sayisi, freq="B"))
+
+    daily_result = backtest_stock("TEST.IS", timeframe="daily", raw_df=uzun_veri)
+    weekly_result = backtest_stock("TEST.IS", timeframe="weekly", raw_df=uzun_veri)
+
+    daily_n = daily_result["classic"]["PP"]["sample_size"]
+    weekly_n = weekly_result["classic"]["PP"]["sample_size"]
+
+    assert weekly_n < daily_n

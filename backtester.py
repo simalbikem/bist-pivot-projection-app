@@ -22,13 +22,23 @@ Sonunda her yöntem/seviye için touch ve break istatistiklerini üretir.
         Bu, "PP genelde hangi yönde kırılıyor" sorusunu cevaplamamızı sağlar.
 
 WOODIE İSTİSNASI:
-        Her gün için pivot hesaplanırken, Woodie yöntemi diğerlerinden farklı olarak BUGÜNÜN Open değerini kullanır, 
-        diğer 4 yöntem ise tamamen ÖNCEKİ günün OHLC'sine dayanır. Bu yüzden pivot_calculations.calculate_all_pivots() her çağrıldığında hem "prev_*" hem "today_open" ayrı ayrı verilir.
+        Her dönem için pivot hesaplanırken, Woodie yöntemi diğerlerinden farklı olarak BUGÜNÜN/BU DÖNEMİN
+        Open değerini kullanır, diğer 4 yöntem ise tamamen ÖNCEKİ dönemin OHLC'sine dayanır. Bu yüzden
+        pivot_calculations.calculate_all_pivots() her çağrıldığında hem "prev_*" hem "today_open" ayrı ayrı verilir.
+
+RAW_DF PARAMETRESİ:
+        backtest_stock artık isteğe bağlı bir raw_df parametresi kabul
+        eder. Bu, update_data.py gibi çağıranların, aynı hissenin ham
+        günlük verisini BİR KEZ çekip 3 zaman diliminde (daily/weekly/
+        monthly) yeniden kullanmasını sağlar - Yahoo Finance'e gereksiz
+        tekrar istek atılmasını önler. raw_df verilmezse (varsayılan
+        None), fonksiyon kendisi get_stock_data ile çeker - böylece
+        eski kullanım şekli (sadece ticker vererek çağırma) hâlâ çalışır.
 """
 import pandas as pd
 
 from config import TOUCH_THRESHOLD_PCT, BREAK_THRESHOLD_PCT
-from data_fetcher import get_stock_data
+from data_fetcher import get_stock_data, resample_to_timeframe
 from pivot_calculations import calculate_all_pivots
 
 def determine_level_type(level_name: str) -> str:
@@ -80,14 +90,27 @@ def check_pp_break(
     break_down = day_close < pp_value * (1 - threshold_pct)
     return break_up, break_down
 
-def backtest_stock(ticker: str, touch_mode: str = "range") -> dict:
-    df = get_stock_data(ticker)
+def backtest_stock(
+    ticker: str,
+    touch_mode: str = "range",
+    timeframe: str = "daily",
+    raw_df: pd.DataFrame = None,
+) -> dict:
 
-    if df.empty or len(df) < 3:
-        print(f"UYARI: {ticker} için yeterli veri yok, backtest atlanıyor.")
+    if raw_df is None:
+        raw_df = get_stock_data(ticker)
+
+    if raw_df.empty:
+        print(f"UYARI: {ticker} için veri yok, backtest atlanıyor.")
         return {}
 
-    # Ham sayaçları biriktirileceği yapı: stats[method][level_name] = {...}
+    df = resample_to_timeframe(raw_df, timeframe)
+
+    if df.empty or len(df) < 3:
+        print(f"UYARI: {ticker} için {timeframe} bazında yeterli veri yok, backtest atlanıyor.")
+        return {}
+
+    # Ham sayaçları biriktirileceği yapı
     stats = {}
 
     for i in range(1, len(df)):
@@ -99,7 +122,7 @@ def backtest_stock(ticker: str, touch_mode: str = "range") -> dict:
             prev_high=prev_row["High"],
             prev_low=prev_row["Low"],
             prev_close=prev_row["Close"],
-            today_open=today_row["Open"],  # Woodie için kritik: BUGÜNÜN openı
+            today_open=today_row["Open"],  # Woodie için kritik
         )
 
         for method, levels in pivots.items():
@@ -167,20 +190,19 @@ if __name__ == "__main__":
     from config import BIST_STOCKS
 
     test_ticker = BIST_STOCKS[0]
-    print(f"{test_ticker} için backtest çalışıyor...\n")
 
-    sonuclar = backtest_stock(test_ticker)
+    for tf in ["daily", "weekly", "monthly"]:
+        print(f"\n{'='*50}")
+        print(f"{test_ticker} için {tf} backtest çalışıyor...")
+        print(f"{'='*50}")
 
-    for method, levels in sonuclar.items():
-        print(f"\n{method.upper()}:")
-        for level_name, stat in levels.items():
-            touch_str = f"{stat['touch_probability']*100:.1f}%"
+        sonuclar = backtest_stock(test_ticker, timeframe=tf)
 
-            if stat["break_probability"] is not None:
-                break_str = f"break={stat['break_probability']*100:.1f}%"
-            else:
-                up = stat["break_up_probability"] * 100
-                down = stat["break_down_probability"] * 100
-                break_str = f"break_up={up:.1f}% break_down={down:.1f}%"
+        if not sonuclar:
+            continue
 
-            print(f"  {level_name}: touch={touch_str}  {break_str}  (n={stat['sample_size']})")
+        pp_stat = sonuclar["classic"]["PP"]
+        print(f"  classic/PP: touch={pp_stat['touch_probability']*100:.1f}%  "
+              f"break_up={pp_stat['break_up_probability']*100:.1f}%  "
+              f"break_down={pp_stat['break_down_probability']*100:.1f}%  "
+              f"(n={pp_stat['sample_size']})")
