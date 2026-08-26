@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 
-from config import BIST_STOCKS, PIVOT_METHODS
-from data_fetcher import get_stock_data
+from config import BIST_STOCKS, PIVOT_METHODS, TIMEFRAMES
+from data_fetcher import get_stock_data, resample_to_timeframe
 from pivot_calculations import calculate_all_pivots
 from database import get_pivot_stats, get_confluence_zones
 from charts import plot_candlestick_with_pivots, plot_confluence_zones
@@ -34,8 +34,9 @@ def reconstruct_zones_from_db(df_zones: pd.DataFrame) -> list:
 # ---------------------------------------------------------
 st.sidebar.title("Settings")
 ticker = st.sidebar.selectbox("Select Stock", BIST_STOCKS)
+timeframe = st.sidebar.selectbox("Timeframe", TIMEFRAMES, format_func=str.capitalize)
 method = st.sidebar.selectbox("The Pivot Method", PIVOT_METHODS, format_func=str.capitalize)
-days_to_show = st.sidebar.slider("Days to Show in Chart", 7, 180, 365)
+periods_to_show = st.sidebar.slider("Periods to Show in Chart", 7, 180, 365)
 
 # ---------------------------------------------------------
 # Başlık - yasal uyarı
@@ -47,17 +48,25 @@ st.warning(
     "Pivot levels are statistically calculated potential support/resistance zones; we don't guarantee specific price levels."
 )
 
-# ---------------------------------------------------------
-# Veriyi çek, güncel pivotları hesapla
-# ---------------------------------------------------------
-df = cached_get_stock_data(ticker)
+# --------------------------------------------------------------------------
+# Veriyi çek, seçilen timeframe'e göre resample et, güncel pivotları hesapla
+# --------------------------------------------------------------------------
+raw_df = cached_get_stock_data(ticker)
 
-if df.empty or len(df) < 2:
+if raw_df.empty or len(raw_df) < 2:
     st.error(f"{ticker}'s data was not found. Please select another stock.")
     st.stop()
 
-prev_row = df.iloc[-2]
-today_row = df.iloc[-1]
+# Grafik ve güncel pivot hesaplaması, seçilen timeframe'e göre resample edilmiş veriyle çalışır 
+# -böylece "weekly" seçildiğinde hem mum grafiği hem pivot çizgileri haftalık olur, tutarsızlık oluşmaz.
+display_df = resample_to_timeframe(raw_df, timeframe)
+
+if display_df.empty or len(display_df) < 2:
+    st.error(f"Not enough {timeframe} data available for {ticker}. Please select another stock or timeframe.")
+    st.stop()
+
+prev_row = display_df.iloc[-2]
+today_row = display_df.iloc[-1]
 pivots = calculate_all_pivots(
     prev_open=prev_row["Open"], prev_high=prev_row["High"],
     prev_low=prev_row["Low"], prev_close=prev_row["Close"],
@@ -70,27 +79,27 @@ pivots = calculate_all_pivots(
 tab1, tab2, tab3 = st.tabs(["📈Pivot Graph", "🎯 Confluence Zones", "📊 Backtest Statistics"])
 
 with tab1:
-    st.subheader(f"{ticker} - {method.capitalize()} Pivot Levels")
-    fig = plot_candlestick_with_pivots(df, pivots, ticker, method=method, days_to_show=days_to_show)
+    st.subheader(f"{ticker} - {method.capitalize()} Pivot Levels ({timeframe.capitalize()})")
+    fig = plot_candlestick_with_pivots(display_df, pivots, ticker, method=method, days_to_show=periods_to_show)
     st.plotly_chart(fig, use_container_width=True)
 
-    st.caption("Current Pivot Values (calculated based on today's open)")
+    st.caption(f"Current Pivot Values (calculated based on the latest {timeframe} open)")
     level_df = pd.DataFrame([
         {"Level": k, "Value": round(v, 2)} for k, v in pivots[method].items()
     ])
     st.dataframe(level_df, hide_index=True, use_container_width=True)
 
 with tab2:
-    st.subheader(f"{ticker} - Confluence Zones")
-    df_zones_db = get_confluence_zones(ticker)
+    st.subheader(f"{ticker} - Confluence Zones ({timeframe.capitalize()})")
+    df_zones_db = get_confluence_zones(ticker, timeframe=timeframe)
 
     if df_zones_db.empty:
         st.info(
-            "No confluence data available for this stock. "
+            "No confluence data available for this stock and timeframe. "
         )
     else:
         zones = reconstruct_zones_from_db(df_zones_db)
-        fig2 = plot_confluence_zones(df, zones, ticker, days_to_show=days_to_show)
+        fig2 = plot_confluence_zones(display_df, zones, ticker, days_to_show=periods_to_show)
         st.plotly_chart(fig2, use_container_width=True)
 
         st.caption(f"{len(zones)} confluence zone found (ordered from strong to weak)")
@@ -102,12 +111,12 @@ with tab2:
                 st.dataframe(contrib_df, hide_index=True, use_container_width=True)
 
 with tab3:
-    st.subheader(f"{ticker} - Backtest Statistics (Touch / Break Probabilities)")
-    stats_df = get_pivot_stats(ticker)
+    st.subheader(f"{ticker} - Backtest Statistics ({timeframe.capitalize()}, Touch / Break Probabilities)")
+    stats_df = get_pivot_stats(ticker, timeframe=timeframe)
 
     if stats_df.empty:
         st.info(
-            "No backtest data available for this stock. "
+            "No backtest data available for this stock and timeframe. "
         )
     else:
         method_stats = stats_df[stats_df["method"] == method].copy()
