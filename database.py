@@ -101,6 +101,7 @@ def create_tables():
     # Yeni oluşturulan veritabanlarında CREATE TABLE zaten sütunu içerdiği için bu fonksiyon onlarda değişiklik yapmaz (idempotent).
     migrate_add_timeframe_column()
     migrate_add_updated_at_column()
+    migrate_add_users_table()
 
 def save_pivot_stats(ticker: str, stats: dict, timeframe: str = "daily"):
     """Aynı ticker + timeframe kombinasyonu için önceki kayıtlar önce silinir, 
@@ -243,6 +244,85 @@ def screen_by_confluence(timeframe: str, min_method_count: int) -> pd.DataFrame:
     """, conn, params=(timeframe, min_method_count))
     conn.close()
     return df
+
+def migrate_add_users_table():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            hashed_password TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            telegram_chat_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def create_user(username: str, plain_password: str, email: str, first_name: str, last_name: str) -> bool:
+    """Yeni bir kullanıcı kaydeder. Şifre burada, streamlit_authenticator'ın Hasher.hash() fonksiyonuyla hash'lenerek saklanır."""
+    import streamlit_authenticator as stauth
+
+    hashed = stauth.Hasher.hash(plain_password)
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO users (username, hashed_password, email, first_name, last_name)
+            VALUES (?, ?, ?, ?, ?)
+        """, (username, hashed, email, first_name, last_name))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        # UNIQUE kısıtlaması ihlal edildi (username veya email zaten var)
+        return False
+    finally:
+        conn.close()
+
+def get_credentials_dict() -> dict:
+    """Tüm kullanıcıları, streamlit_authenticator.Authenticate'in beklediği formatta bir sözlük olarak döner.
+    Bu fonksiyon her Streamlit script çalıştığında çağrılır 
+    -YAML dosyası kullanılmıyor, veritabanı her zaman güncel gerçek kaynak (source of truth)."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT username, hashed_password, email, first_name, last_name FROM users"
+    ).fetchall()
+    conn.close()
+
+    usernames = {}
+    for username, hashed_password, email, first_name, last_name in rows:
+        usernames[username] = {
+            "email": email,
+            "first_name": first_name,
+            "last_name": last_name,
+            "password": hashed_password,
+            "logged_in": False,
+        }
+
+    return {"usernames": usernames}
+
+def get_telegram_chat_id(username: str) -> str | None:
+    """Bir kullanıcının kayıtlı Telegram chat ID'sini döner, yoksa None."""
+    conn = get_connection()
+    result = conn.execute(
+        "SELECT telegram_chat_id FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    conn.close()
+    return result[0] if result and result[0] is not None else None
+
+def update_telegram_chat_id(username: str, chat_id: str):
+    """Bir kullanıcının Telegram chat ID'sini günceller/kaydeder."""
+    conn = get_connection()
+    conn.execute(
+        "UPDATE users SET telegram_chat_id = ? WHERE username = ?", (chat_id, username)
+    )
+    conn.commit()
+    conn.close()
 
 # Hızlı test 
 if __name__ == "__main__":
