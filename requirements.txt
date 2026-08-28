@@ -4,3 +4,4 @@ pandas
 numpy
 yfinance
 pytest
+python-dotenv

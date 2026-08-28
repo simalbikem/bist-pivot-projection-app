@@ -1,3 +1,14 @@
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+COOKIE_KEY = os.getenv("COOKIE_KEY")
+if COOKIE_KEY is None:
+    raise ValueError(
+        "COOKIE_KEY .env dosyasinda bulunamadi."
+    )
+
 BIST_STOCKS = [
     "AEFES.IS",
     "AKBNK.IS",

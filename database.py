@@ -102,6 +102,7 @@ def create_tables():
     migrate_add_timeframe_column()
     migrate_add_updated_at_column()
     migrate_add_users_table()
+    migrate_add_alerts_table()
 
 def save_pivot_stats(ticker: str, stats: dict, timeframe: str = "daily"):
     """Aynı ticker + timeframe kombinasyonu için önceki kayıtlar önce silinir, 
@@ -321,6 +322,98 @@ def update_telegram_chat_id(username: str, chat_id: str):
     conn.execute(
         "UPDATE users SET telegram_chat_id = ? WHERE username = ?", (chat_id, username)
     )
+    conn.commit()
+    conn.close()
+
+def migrate_add_alerts_table():
+    """MIGRATION: 'alerts' tablosunu oluşturur (yoksa). Bu, users tablosuna FOREIGN KEY ile bağlıdır -her alert, onu oluşturan kullanıcıya aittir.
+    last_triggered_date: aynı alert'in aynı gün içinde birden fazla kez Telegram mesajı göndermesini(spam) önlemek için kullanılır."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            ticker TEXT NOT NULL,
+            method TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            level_name TEXT NOT NULL,
+            condition_type TEXT NOT NULL CHECK(condition_type IN ('touch', 'break')),
+            active INTEGER NOT NULL DEFAULT 1,
+            last_triggered_date TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def create_alert(user_id: int, ticker: str, method: str, timeframe: str, level_name: str, condition_type: str) -> bool:
+    """Yeni bir alert kaydeder. condition_type sadece 'touch' veya 'break' olabilir."""
+    if condition_type not in ("touch", "break"):
+        raise ValueError("condition_type sadece 'touch' veya 'break' olabilir.")
+
+    conn = get_connection()
+    try:
+        conn.execute("""
+            INSERT INTO alerts (user_id, ticker, method, timeframe, level_name, condition_type)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, ticker, method, timeframe, level_name, condition_type))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+def get_alerts_for_user(user_id: int) -> pd.DataFrame:
+    """Bir kullanıcının tüm alertlerini (aktif/pasif fark etmeksizin) en yeniden eskiye döner."""
+    conn = get_connection()
+    df = pd.read_sql_query(
+        "SELECT * FROM alerts WHERE user_id = ? ORDER BY created_at DESC",
+        conn, params=(user_id,),
+    )
+    conn.close()
+    return df
+
+def delete_alert(alert_id: int, user_id: int) -> bool:
+    """Bir alerti siler -sadece o alert'in gerçekten user_id'ye ait olması durumunda. 
+    Böylece bir kullanıcının başka birinin alert IDsini tahmin edip silmesi engellenir."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM alerts WHERE id = ? AND user_id = ?", (alert_id, user_id))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
+
+def set_alert_active(alert_id: int, user_id: int, active: bool) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE alerts SET active = ? WHERE id = ? AND user_id = ?",
+        (1 if active else 0, alert_id, user_id),
+    )
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
+
+def get_all_active_alerts_with_contact() -> pd.DataFrame:
+    """alert_checker.py için: TÜM kullanıcıların aktif alertlerini, onları oluşturan kullanıcının telegram_chat_idsiyle JOIN ederek döner."""
+    conn = get_connection()
+    df = pd.read_sql_query("""
+        SELECT a.id, a.user_id, a.ticker, a.method, a.timeframe, a.level_name,
+               a.condition_type, a.last_triggered_date, u.telegram_chat_id, u.username
+        FROM alerts a
+        JOIN users u ON a.user_id = u.id
+        WHERE a.active = 1 AND u.telegram_chat_id IS NOT NULL
+    """, conn)
+    conn.close()
+    return df
+
+def mark_alert_triggered(alert_id: int, date_str: str):
+    """Bir alertin en son tetiklendiği tarihi kaydeder (aynı gün tekrar göndermemek için)."""
+    conn = get_connection()
+    conn.execute("UPDATE alerts SET last_triggered_date = ? WHERE id = ?", (date_str, alert_id))
     conn.commit()
     conn.close()
 

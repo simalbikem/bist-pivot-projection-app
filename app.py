@@ -3,7 +3,7 @@ import streamlit_authenticator as stauth
 from database import create_tables, create_user, get_credentials_dict
 import pandas as pd
 
-from config import BIST_STOCKS, PIVOT_METHODS, TIMEFRAMES, LOW_SAMPLE_SIZE_THRESHOLD
+from config import COOKIE_KEY, BIST_STOCKS, PIVOT_METHODS, TIMEFRAMES, LOW_SAMPLE_SIZE_THRESHOLD
 from data_fetcher import get_stock_data, resample_to_timeframe
 from pivot_calculations import calculate_all_pivots
 from database import (
@@ -13,6 +13,54 @@ from database import (
 from charts import plot_candlestick_with_pivots, plot_confluence_zones
 
 st.set_page_config(page_title="BIST Pivot Projection System", layout="wide")
+
+create_tables()
+
+authenticator = stauth.Authenticate(
+    get_credentials_dict(),
+    cookie_name="bist_pivot_auth",
+    cookie_key=COOKIE_KEY,
+    cookie_expiry_days=7,
+    auto_hash=False,  # şifreler zaten create_user() ile hashlenmiş durumda
+)
+
+authenticator.login()
+
+if st.session_state.get("authentication_status") is False:
+    st.error("Username or password is incorrect.")
+    st.stop()
+elif st.session_state.get("authentication_status") is None:
+    st.warning("Please log in or register below if you don't have an account.")
+
+    with st.expander("New user? Register here"):
+        with st.form("register_form"):
+            reg_username = st.text_input("Username")
+            reg_email = st.text_input("Email")
+            reg_first_name = st.text_input("First Name")
+            reg_last_name = st.text_input("Last Name")
+            reg_password = st.text_input("Password", type="password")
+            reg_password_confirm = st.text_input("Confirm Password", type="password")
+            submitted = st.form_submit_button("Register")
+
+            if submitted:
+                if reg_password != reg_password_confirm:
+                    st.error("Passwords do not match.")
+                elif not all([reg_username, reg_email, reg_first_name, reg_last_name, reg_password]):
+                    st.error("Please fill in all fields.")
+                else:
+                    success = create_user(
+                        reg_username, reg_password, reg_email, reg_first_name, reg_last_name
+                    )
+                    if success:
+                        st.success("Registration successful! Please log in above.")
+                    else:
+                        st.error("Username or email already exists.")
+
+    st.stop()
+
+# Bu noktaya sadece authentication_status == True iken ulaşılır.
+authenticator.logout("Logout", "sidebar")
+st.sidebar.write(f"Welcome, {st.session_state['name']}!")
 
 @st.cache_data(ttl=3600)
 def cached_get_stock_data(ticker: str) -> pd.DataFrame:
@@ -87,7 +135,7 @@ pivots = calculate_all_pivots(
 # ---------------------------------------------------------
 # Hızlı bakış: tüm 5 yöntemin PP değeri yan yana
 # ---------------------------------------------------------
-st.subheader("Quick Overview(PP)")
+st.subheader("Quick Overview")
 pp_cols = st.columns(len(pivots))
 for col, (method_name, levels) in zip(pp_cols, pivots.items()):
     with col:
