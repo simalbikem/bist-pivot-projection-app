@@ -9,7 +9,11 @@ from pivot_calculations import calculate_all_pivots
 from database import (
     get_pivot_stats, get_confluence_zones, get_last_update_time,
     screen_by_touch_probability, screen_by_confluence,
+    get_user_id, create_alert, get_alerts_for_user, delete_alert,
+    set_alert_active, update_telegram_chat_id, get_telegram_chat_id,
+    generate_link_code, verify_telegram_link,
 )
+from notifications import send_telegram_message
 from charts import plot_candlestick_with_pivots, plot_confluence_zones
 
 st.set_page_config(page_title="BIST Pivot Projection System", layout="wide")
@@ -25,6 +29,9 @@ authenticator = stauth.Authenticate(
 )
 
 authenticator.login()
+
+if st.session_state.get("authentication_status") is not True:
+    st.session_state.pop("pending_link_code_display", None)
 
 if st.session_state.get("authentication_status") is False:
     st.error("Username or password is incorrect.")
@@ -144,7 +151,7 @@ for col, (method_name, levels) in zip(pp_cols, pivots.items()):
 # ---------------------------------------------------------
 # Sekmeler
 # ---------------------------------------------------------
-tab1, tab2, tab3, tab4 = st.tabs(["📈Pivot Graph", "🎯 Confluence Zones", "📊 Backtest Statistics", "🔍 Screener"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈Pivot Graph", "🎯Confluence Zones", "📊Backtest Statistics", "🔍Screener", "🔔Alerts"])
 
 with tab1:
     st.subheader(f"{ticker} - {method.capitalize()} Pivot Levels ({timeframe.capitalize()})")
@@ -290,3 +297,104 @@ with tab4:
                 }),
                 hide_index=True, use_container_width=True,
             )
+
+with tab5:
+    st.subheader("🔔My Alerts")
+
+    user_id = get_user_id(st.session_state["username"])
+
+        # --- Telegram bağlantısı ---
+    st.markdown("### Telegram Connection")
+    current_chat_id = get_telegram_chat_id(st.session_state["username"])
+
+    if current_chat_id:
+        st.success("Telegram connected ✅")
+
+        if st.button("Send Test Message"):
+            ok = send_telegram_message(current_chat_id, "🔔Test message from BIST Pivot Alert System")
+            if ok:
+                st.success("Test message sent! Check your Telegram.")
+            else:
+                st.error("Failed to send test message.")
+    else:
+        st.warning("Telegram not connected yet. Follow the steps below to link your account.")
+
+        st.markdown(
+            "1. Open Telegram and message our bot: **@simal_bist_alert_bot**\n"
+            "2. Click **Generate Code** below, then send that exact code as a message to the bot.\n"
+            "3. Click **Verify Connection**."
+        )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Generate Code"):
+                code = generate_link_code(st.session_state["username"])
+                st.session_state["pending_link_code_display"] = code
+
+        with col2:
+            if st.button("Verify Connection"):
+                linked = verify_telegram_link(st.session_state["username"])
+                if linked:
+                    st.success("Telegram connected successfully! Refresh to see updated status.")
+                else:
+                    st.error(
+                        "Code not found yet. Make sure you sent the exact code to the bot, then try again."
+                    )
+
+        if "pending_link_code_display" in st.session_state:
+            st.info(f"Your code: **{st.session_state['pending_link_code_display']}** — send this to the bot.")
+
+    st.divider()
+
+    # --- Yeni alert oluşturma ---
+    st.markdown("### Create New Alert")
+    with st.form("new_alert_form"):
+        alert_ticker = st.selectbox("Stock", BIST_STOCKS, key="alert_ticker")
+        alert_timeframe = st.selectbox("Timeframe", TIMEFRAMES, format_func=str.capitalize, key="alert_timeframe")
+        alert_method = st.selectbox("Method", PIVOT_METHODS, format_func=str.capitalize, key="alert_method")
+
+        if alert_method == "demark":
+            level_options = ["PP", "R1", "S1"]
+        else:
+            level_options = ["PP", "R1", "R2", "R3", "S1", "S2", "S3"]
+        alert_level = st.selectbox("Level", level_options, key="alert_level")
+
+        alert_condition = st.radio("Condition", ["touch", "break"], horizontal=True, key="alert_condition")
+
+        create_submitted = st.form_submit_button("Create Alert")
+
+        if create_submitted:
+            if not get_telegram_chat_id(st.session_state["username"]):
+                st.error("Please link your Telegram Chat ID above before creating alerts.")
+            else:
+                create_alert(user_id, alert_ticker, alert_method, alert_timeframe, alert_level, alert_condition)
+                st.success(f"Alert created: {alert_ticker} {alert_method.capitalize()} {alert_level} ({alert_condition}).")
+
+    st.divider()
+
+    # --- Mevcut alertler ---
+    st.markdown("### My Existing Alerts")
+    alerts_df = get_alerts_for_user(user_id)
+
+    if alerts_df.empty:
+        st.info("You haven't created any alerts yet.")
+    else:
+        for _, row in alerts_df.iterrows():
+            cols = st.columns([3, 1, 1])
+            status = "🟢 Active" if row["active"] else "⚪ Paused"
+            last_triggered = row["last_triggered_date"] or "Never"
+            with cols[0]:
+                st.write(
+                    f"**{row['ticker']}** — {row['method'].capitalize()} {row['level_name']} "
+                    f"({row['condition_type']}, {row['timeframe'].capitalize()}) — {status} — "
+                    f"Last triggered: {last_triggered}"
+                )
+            with cols[1]:
+                toggle_label = "Pause" if row["active"] else "Resume"
+                if st.button(toggle_label, key=f"toggle_{row['id']}"):
+                    set_alert_active(int(row["id"]), user_id, not row["active"])
+                    st.rerun()
+            with cols[2]:
+                if st.button("Delete", key=f"delete_{row['id']}"):
+                    delete_alert(int(row["id"]), user_id)
+                    st.rerun()

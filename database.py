@@ -22,7 +22,7 @@ def _column_exists(cursor, table_name: str, column_name: str) -> bool:
 def migrate_add_timeframe_column():
     """MIGRATION: pivot_stats ve confluence_zones tablolarına 'timeframe' sütunu ekler(yoksa). 
     Mevcut tüm satırlar otomatik olarak timeframe='daily' değerini alır 
-    -bu, o veriler zaten günlük veriyle üretildiği için doğru bir varsayılan."""
+    -bu, o veriler zaten günlük veriyle üretildiği için doğru bir varsayılandır."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -103,6 +103,7 @@ def create_tables():
     migrate_add_updated_at_column()
     migrate_add_users_table()
     migrate_add_alerts_table()
+    migrate_add_pending_link_code_column()
 
 def save_pivot_stats(ticker: str, stats: dict, timeframe: str = "daily"):
     """Aynı ticker + timeframe kombinasyonu için önceki kayıtlar önce silinir, 
@@ -416,6 +417,88 @@ def mark_alert_triggered(alert_id: int, date_str: str):
     conn.execute("UPDATE alerts SET last_triggered_date = ? WHERE id = ?", (date_str, alert_id))
     conn.commit()
     conn.close()
+
+def get_user_id(username: str) -> int | None:
+    """Kullanıcı adından, users tablosundaki idyi bulur."""
+    conn = get_connection()
+    result = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
+    conn.close()
+    return result[0] if result else None
+
+def migrate_add_pending_link_code_column():
+    """MIGRATION: users tablosuna 'pending_link_code' sütunu ekler (yoksa).
+    Kullanıcının Telegram hesabını bağlarken kullandığı GEÇİCİ doğrulama kodunu tutar -bağlantı tamamlanınca NULL'a döner."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    if not _column_exists(cursor, "users", "pending_link_code"):
+        cursor.execute("ALTER TABLE users ADD COLUMN pending_link_code TEXT")
+        print("  users: 'pending_link_code' sütunu eklendi.")
+    else:
+        print("  users: 'pending_link_code' sütunu zaten var, atlanıyor.")
+    conn.commit()
+    conn.close()
+
+def generate_link_code(username: str) -> str:
+    """Kullanıcı için rastgele, kısa bir bağlantı kodu üretir,
+    veritabanına geçici olarak kaydeder ve kullanıcıya gösterilmek üzere döner."""
+    import random
+    code = f"BIST-{random.randint(1000, 9999)}"
+
+    conn = get_connection()
+    conn.execute("UPDATE users SET pending_link_code = ? WHERE username = ?", (code, username))
+    conn.commit()
+    conn.close()
+
+    return code
+
+def verify_telegram_link(username: str) -> bool:
+    """Kullanıcının pending_link_code'unu, Telegram botuna gelen son mesajlarla karşılaştırır. 
+    Eşleşme bulunursa, o mesajı gönderen kişinin chat.idsini otomatik olarak bu kullanıcıya kaydeder."""
+    import os
+    import requests
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT pending_link_code FROM users WHERE username = ?", (username,)
+    ).fetchone()
+
+    if row is None or row[0] is None:
+        conn.close()
+        return False
+
+    expected_code = row[0]
+
+    try:
+        response = requests.get(f"https://api.telegram.org/bot{token}/getUpdates", timeout=10)
+        data = response.json()
+    except requests.exceptions.RequestException:
+        conn.close()
+        return False
+
+    if not data.get("ok"):
+        conn.close()
+        return False
+
+    # En yeni mesajlardan başlayarak ara -birden fazla eşleşme varsa en güncelini kullan.
+    for update in reversed(data.get("result", [])):
+        message = update.get("message", {})
+        text = message.get("text", "").strip()
+        if text == expected_code:
+            chat_id = str(message["chat"]["id"])
+            conn.execute(
+                "UPDATE users SET telegram_chat_id = ?, pending_link_code = NULL WHERE username = ?",
+                (chat_id, username),
+            )
+            conn.commit()
+            conn.close()
+            return True
+
+    conn.close()
+    return False
 
 # Hızlı test 
 if __name__ == "__main__":
