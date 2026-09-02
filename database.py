@@ -104,6 +104,7 @@ def create_tables():
     migrate_add_users_table()
     migrate_add_alerts_table()
     migrate_add_pending_link_code_column()
+    migrate_add_is_admin_column()
 
 def save_pivot_stats(ticker: str, stats: dict, timeframe: str = "daily"):
     """Aynı ticker + timeframe kombinasyonu için önceki kayıtlar önce silinir, 
@@ -499,6 +500,53 @@ def verify_telegram_link(username: str) -> bool:
 
     conn.close()
     return False
+
+def migrate_add_is_admin_column():
+    """MIGRATION: users tablosuna 'is_admin' sütunu (yoka) ekler."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    if not _column_exists(cursor, "users", "is_admin"):
+        cursor.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        print("  users: 'is_admin' column has been added.")
+    else:
+        print("  users: 'is_admin' column already exists, so it is skipped.")
+    conn.commit()
+    conn.close()
+
+def is_user_admin(username: str) -> bool:
+    """Kullanıcının admin yetkisine sahip olup olmadığını kontrol eder."""
+    conn = get_connection()
+    result = conn.execute("SELECT is_admin FROM users WHERE username = ?", (username,)).fetchone()
+    conn.close()
+    return bool(result[0]) if result else False
+
+def get_all_users_with_stats() -> pd.DataFrame:
+    """Admin Paneli için: tüm kullanıcıları, kaç alerte sahip olduklarıyla ve Telegram bağlantı durumlarıyla birlikte döner."""
+    conn = get_connection()
+    df = pd.read_sql_query("""
+        SELECT
+            u.id, u.username, u.email, u.first_name, u.last_name, u.is_admin,
+            CASE WHEN u.telegram_chat_id IS NOT NULL THEN 1 ELSE 0 END as telegram_connected,
+            COUNT(a.id) as alert_count
+        FROM users u
+        LEFT JOIN alerts a ON u.id = a.user_id
+        GROUP BY u.id
+        ORDER BY u.created_at DESC
+    """, conn)
+    conn.close()
+    return df
+
+def delete_user_and_data(user_id: int) -> bool:
+    """Bir kullanıcıyı ve TÜM verilerini kalıcı olarak siler.
+    Önce alertler silinir(foreign key ilişkisi gereği), sonra kullanıcınınkendisi silinir."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM alerts WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
 
 # Hızlı test 
 if __name__ == "__main__":

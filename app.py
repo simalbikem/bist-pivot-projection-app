@@ -11,6 +11,7 @@ from database import (
     get_user_id, create_alert, get_alerts_for_user, delete_alert,
     set_alert_active, update_telegram_chat_id, get_telegram_chat_id,
     generate_link_code, verify_telegram_link,
+    is_user_admin, get_all_users_with_stats, delete_user_and_data,
 )
 from notifications import send_telegram_message
 from charts import plot_candlestick_with_pivots, plot_confluence_zones
@@ -27,7 +28,15 @@ authenticator = stauth.Authenticate(
     auto_hash=False,  # şifreler zaten create_user() ile hashlenmiş durumda
 )
 
-authenticator.login()
+try:
+    authenticator.login()
+except stauth.LoginError:
+    authenticator.cookie_controller.delete_cookie()
+    st.warning(
+        "Your session has expired or your account no longer exists. "
+        "Please refresh this page(F5) to log in again."
+    )
+    st.stop()
 
 if st.session_state.get("authentication_status") is not True:
     st.session_state.pop("pending_link_code_display", None)
@@ -150,7 +159,16 @@ for col, (method_name, levels) in zip(pp_cols, pivots.items()):
 # ---------------------------------------------------------
 # Sekmeler
 # ---------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈Pivot Graph", "🎯Confluence Zones", "📊Backtest Statistics", "🔍Screener", "🔔Alerts"])
+user_is_admin = is_user_admin(st.session_state["username"])
+
+tab_names = ["📈Pivot Graph", "🎯Confluence Zones", "📊Backtest Statistics", "🔍Screener", "🔔Alerts"]
+if user_is_admin:
+    tab_names.append("🛠️Admin")
+
+tabs = st.tabs(tab_names)
+tab1, tab2, tab3, tab4, tab5 = tabs[0], tabs[1], tabs[2], tabs[3], tabs[4]
+if user_is_admin:
+    tab6 = tabs[5]
 
 with tab1:
     st.subheader(f"{ticker} - {method.capitalize()} Pivot Levels ({timeframe.capitalize()})")
@@ -297,6 +315,34 @@ with tab4:
                 hide_index=True, use_container_width=True,
             )
 
+if user_is_admin:
+    with tab6:
+        st.subheader("🛠️Admin Panel")
+        st.caption("Manage all registered users")
+
+        users_df = get_all_users_with_stats()
+
+        if users_df.empty:
+            st.info("No users found.")
+        else:
+            for _, row in users_df.iterrows():
+                cols = st.columns([3, 1, 1, 1])
+                with cols[0]:
+                    admin_badge = " 👑" if row["is_admin"] else ""
+                    telegram_badge = "✅" if row["telegram_connected"] else "❌"
+                    st.write(
+                        f"**{row['username']}**{admin_badge} — {row['first_name']} {row['last_name']} "
+                        f"({row['email']}) — {row['alert_count']} alerts — Telegram: {telegram_badge}"
+                    )
+                with cols[2]:
+                    if row["username"] != st.session_state["username"]:
+                        if st.button("Delete User", key=f"admin_delete_{row['id']}"):
+                            delete_user_and_data(int(row["id"]))
+                            st.success(f"Deleted user: {row['username']}")
+                            st.rerun()
+                    else:
+                        st.caption("(You)")
+
 with tab5:
     st.subheader("🔔My Alerts")
 
@@ -344,6 +390,26 @@ with tab5:
             st.info(f"Your code: **{st.session_state['pending_link_code_display']}** — send this to the bot.")
 
     st.divider()
+
+    # --- Hesap silme ---
+    st.markdown("### Danger Zone")
+    with st.expander("Delete My Account"):
+        st.warning(
+            "This will permanently delete your account and ALL your alerts. "
+            "This action cannot be undone."
+        )
+        confirm_username = st.text_input(
+            "Type your username to confirm deletion:", key="delete_confirm"
+        )
+        if st.button("Permanently Delete My Account"):
+            if confirm_username == st.session_state["username"]:
+                delete_user_and_data(user_id)
+                st.success("Your account has been deleted. You will be logged out.")
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.rerun()
+            else:
+                st.error("Username does not match. Account not deleted.")
 
     # --- Yeni alert oluşturma ---
     st.markdown("### Create New Alert")
