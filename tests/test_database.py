@@ -8,7 +8,6 @@
 import pandas as pd
 import pytest
 import sqlite3
-
 import database
 from database import (
     create_tables,
@@ -16,6 +15,16 @@ from database import (
     save_confluence_zones,
     get_pivot_stats,
     get_confluence_zones,
+)
+from database import (
+    create_tables, save_pivot_stats, save_confluence_zones,
+    get_pivot_stats, get_confluence_zones,
+    create_user, get_credentials_dict, get_user_id,
+    create_alert, get_alerts_for_user, delete_alert, set_alert_active,
+    get_all_active_alerts_with_contact, mark_alert_triggered,
+    update_telegram_chat_id, get_telegram_chat_id,
+    generate_link_code, verify_telegram_link,
+    is_user_admin, get_all_users_with_stats, delete_user_and_data,
 )
 
 @pytest.fixture
@@ -334,3 +343,201 @@ def test_get_last_update_time_survives_schema_migration(tmp_path, monkeypatch):
     result = get_last_update_time("YENI_KAYIT.IS", timeframe="daily")
 
     assert result is not None 
+
+# ---------------------------------------------------------
+# create_user / get_credentials_dict testleri
+# ---------------------------------------------------------
+def test_create_user_rejects_duplicate_username(temp_db):
+    assert create_user("dupuser", "Pass1234", "dup1@example.com", "Dup", "User") is True
+    assert create_user("dupuser", "Pass5678", "dup2@example.com", "Dup2", "User2") is False
+
+def test_create_user_rejects_duplicate_email(temp_db):
+    assert create_user("uniqueuser1", "Pass1234", "same@example.com", "U1", "User") is True
+    assert create_user("uniqueuser2", "Pass1234", "same@example.com", "U2", "User") is False
+
+def test_get_credentials_dict_contains_hashed_password_not_plaintext(temp_db):
+    create_user("hashcheck", "MySecretPass1", "hash@example.com", "Hash", "Check")
+    creds = get_credentials_dict()
+    stored_pw = creds["usernames"]["hashcheck"]["password"]
+    assert stored_pw != "MySecretPass1"
+    assert stored_pw.startswith("$2b$")  # bcrypt hash formati
+
+# ---------------------------------------------------------
+# alerts CRUD ve ownership testleri
+# ---------------------------------------------------------
+def test_create_alert_success_and_invalid_condition(temp_db):
+    create_user("alertuser", "Pass1234", "alert@example.com", "Alert", "User")
+    uid = get_user_id("alertuser")
+    assert create_alert(uid, "THYAO.IS", "classic", "daily", "R1", "touch") is True
+    with pytest.raises(ValueError):
+        create_alert(uid, "THYAO.IS", "classic", "daily", "R1", "invalid")
+
+def test_get_alerts_for_user_returns_only_own_alerts(temp_db):
+    create_user("userX", "Pass1234", "x@example.com", "X", "User")
+    create_user("userY", "Pass1234", "y@example.com", "Y", "User")
+    uid_x = get_user_id("userX")
+    uid_y = get_user_id("userY")
+    create_alert(uid_x, "THYAO.IS", "classic", "daily", "R1", "touch")
+    create_alert(uid_y, "AKBNK.IS", "classic", "daily", "PP", "break")
+
+    x_alerts = get_alerts_for_user(uid_x)
+    assert len(x_alerts) == 1
+    assert x_alerts.iloc[0]["ticker"] == "THYAO.IS"
+
+def test_delete_alert_ownership_enforced(temp_db):
+    """Başka bir kullanıcının alertini silmeye çalışmak False dönmeli, gerçek sahibi silebilmeli."""
+    create_user("owner", "Pass1234", "owner@example.com", "Owner", "User")
+    create_user("intruder", "Pass1234", "intruder@example.com", "Intruder", "User")
+    owner_id = get_user_id("owner")
+    intruder_id = get_user_id("intruder")
+    create_alert(owner_id, "THYAO.IS", "classic", "daily", "R1", "touch")
+    alert_id = int(get_alerts_for_user(owner_id).iloc[0]["id"])
+
+    assert delete_alert(alert_id, intruder_id) is False
+    assert len(get_alerts_for_user(owner_id)) == 1  # hala duruyor
+
+    assert delete_alert(alert_id, owner_id) is True
+    assert len(get_alerts_for_user(owner_id)) == 0
+
+def test_set_alert_active_ownership_enforced(temp_db):
+    create_user("owner2", "Pass1234", "owner2@example.com", "Owner", "User")
+    create_user("intruder2", "Pass1234", "intruder2@example.com", "Intruder", "User")
+    owner_id = get_user_id("owner2")
+    intruder_id = get_user_id("intruder2")
+    create_alert(owner_id, "THYAO.IS", "classic", "daily", "R1", "touch")
+    alert_id = int(get_alerts_for_user(owner_id).iloc[0]["id"])
+
+    assert set_alert_active(alert_id, intruder_id, False) is False
+    assert bool(get_alerts_for_user(owner_id).iloc[0]["active"]) is True
+
+def test_get_all_active_alerts_with_contact_filters_correctly(temp_db):
+    """Telegram bağlı olmayan kullanıcıların ve pasif alertlerin sonuçtan HARİÇ tutulduğunu doğrular."""
+    create_user("withtg", "Pass1234", "withtg@example.com", "With", "TG")
+    create_user("notg", "Pass1234", "notg@example.com", "No", "TG")
+    uid_with = get_user_id("withtg")
+    uid_without = get_user_id("notg")
+    update_telegram_chat_id("withtg", "12345")
+
+    create_alert(uid_with, "THYAO.IS", "classic", "daily", "R1", "touch")
+    create_alert(uid_without, "AKBNK.IS", "classic", "daily", "PP", "touch")  # telegram yok
+
+    create_alert(uid_with, "AKBNK.IS", "classic", "daily", "PP", "break")
+    paused_id = int(
+        get_alerts_for_user(uid_with)[get_alerts_for_user(uid_with)["ticker"] == "AKBNK.IS"].iloc[0]["id"]
+    )
+    set_alert_active(paused_id, uid_with, False)
+
+    active_df = get_all_active_alerts_with_contact()
+    assert list(active_df["ticker"]) == ["THYAO.IS"]  # sadece aktif + telegram bağlı olan
+
+def test_mark_alert_triggered_updates_date(temp_db):
+    create_user("trigu", "Pass1234", "trigu@example.com", "Trig", "User")
+    uid = get_user_id("trigu")
+    create_alert(uid, "THYAO.IS", "classic", "daily", "R1", "touch")
+    alert_id = int(get_alerts_for_user(uid).iloc[0]["id"])
+
+    assert get_alerts_for_user(uid).iloc[0]["last_triggered_date"] is None
+    mark_alert_triggered(alert_id, "2026-09-02")
+    assert get_alerts_for_user(uid).iloc[0]["last_triggered_date"] == "2026-09-02"
+
+# ---------------------------------------------------------
+# Telegram bağlantı kodu testleri (requests.get mock'lu)
+# ---------------------------------------------------------
+def test_generate_link_code_returns_and_stores_code(temp_db):
+    create_user("linkuser", "Pass1234", "link@example.com", "Link", "User")
+    code = generate_link_code("linkuser")
+    assert code.startswith("BIST-")
+
+    conn = database.get_connection()
+    stored = conn.execute(
+        "SELECT pending_link_code FROM users WHERE username='linkuser'"
+    ).fetchone()[0]
+    conn.close()
+    assert stored == code
+
+def test_verify_telegram_link_success(temp_db, monkeypatch):
+    create_user("linkuser2", "Pass1234", "link2@example.com", "Link", "User")
+    code = generate_link_code("linkuser2")
+
+    class FakeResponse:
+        def json(self):
+            return {"ok": True, "result": [{"message": {"chat": {"id": 999888777}, "text": code}}]}
+
+    monkeypatch.setattr("requests.get", lambda url, timeout=10: FakeResponse())
+
+    assert verify_telegram_link("linkuser2") is True
+    assert get_telegram_chat_id("linkuser2") == "999888777"
+
+def test_verify_telegram_link_code_not_found(temp_db, monkeypatch):
+    create_user("linkuser3", "Pass1234", "link3@example.com", "Link", "User")
+    generate_link_code("linkuser3")
+
+    class FakeResponse:
+        def json(self):
+            return {"ok": True, "result": []}
+
+    monkeypatch.setattr("requests.get", lambda url, timeout=10: FakeResponse())
+
+    assert verify_telegram_link("linkuser3") is False
+
+# ---------------------------------------------------------
+# Admin / kullanıcı silme testleri
+# ---------------------------------------------------------
+def test_is_user_admin_default_false_and_after_promotion(temp_db):
+    create_user("plainuser", "Pass1234", "plain@example.com", "Plain", "User")
+    assert is_user_admin("plainuser") is False
+
+    conn = database.get_connection()
+    conn.execute("UPDATE users SET is_admin = 1 WHERE username = 'plainuser'")
+    conn.commit()
+    conn.close()
+    assert is_user_admin("plainuser") is True
+
+def test_get_all_users_with_stats_counts_correctly(temp_db):
+    create_user("statsuser", "Pass1234", "stats@example.com", "Stats", "User")
+    uid = get_user_id("statsuser")
+    update_telegram_chat_id("statsuser", "555")
+    create_alert(uid, "THYAO.IS", "classic", "daily", "R1", "touch")
+    create_alert(uid, "AKBNK.IS", "classic", "daily", "PP", "touch")
+
+    df = get_all_users_with_stats()
+    row = df[df["username"] == "statsuser"].iloc[0]
+    assert row["alert_count"] == 2
+    assert row["telegram_connected"] == 1
+
+def test_delete_user_and_data_cascades(temp_db):
+    """Bir kullanıcı silindiğinde SADECE onun alertleri silinmeli, başkasınınkiler kalmalı."""
+    create_user("todelete", "Pass1234", "todelete@example.com", "To", "Delete")
+    create_user("survivor", "Pass1234", "survivor@example.com", "Sur", "Vivor")
+    uid_delete = get_user_id("todelete")
+    uid_survivor = get_user_id("survivor")
+
+    create_alert(uid_delete, "THYAO.IS", "classic", "daily", "R1", "touch")
+    create_alert(uid_survivor, "AKBNK.IS", "classic", "daily", "PP", "touch")
+
+    assert delete_user_and_data(uid_delete) is True
+
+    creds = get_credentials_dict()
+    assert "todelete" not in creds["usernames"]
+    assert "survivor" in creds["usernames"]
+
+    conn = database.get_connection()
+    remaining = conn.execute("SELECT ticker FROM alerts").fetchall()
+    conn.close()
+    assert remaining == [("AKBNK.IS",)]
+
+def test_delete_user_and_data_nonexistent_returns_false(temp_db):
+    assert delete_user_and_data(999999) is False
+
+# ---------------------------------------------------------
+# Migration idempotency testleri (is_admin, pending_link_code)
+# ---------------------------------------------------------
+def test_migrate_add_is_admin_column_is_idempotent(temp_db):
+    from database import migrate_add_is_admin_column
+    migrate_add_is_admin_column()
+    migrate_add_is_admin_column()  # ikinci çağrı hata vermemeli
+
+def test_migrate_add_pending_link_code_column_is_idempotent(temp_db):
+    from database import migrate_add_pending_link_code_column
+    migrate_add_pending_link_code_column()
+    migrate_add_pending_link_code_column()
