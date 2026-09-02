@@ -11,10 +11,9 @@ DAVRANIŞ:
       Bu, haftalık/aylık alertlerin gün içi hassasiyet gerektirmediği varsayımına dayanan bilinçli bir basitleştirmedir.
     - Aynı alert, aynı gün içinde SADECE BİR KEZ tetiklenir.
 """
-
-from datetime import date
 import yfinance as yf
-
+from datetime import date
+from datetime import datetime
 from data_fetcher import get_stock_data, resample_to_timeframe
 from pivot_calculations import calculate_all_pivots
 from backtester import check_touch, check_directional_break, check_pp_break, determine_level_type
@@ -79,6 +78,9 @@ def check_alert_condition(alert, pivots: dict, today_ohlc: dict) -> tuple[bool, 
 
 def run_alert_checks():
     """Tüm aktif alertleri kontrol edip gerekli Telegram bildirimlerini gönderir."""
+    with open("alert_checker.log", "a", encoding="utf-8") as f:
+        f.write(f"\n[{datetime.now()}] alert_checker.py ran.\n")
+    
     today_str = date.today().isoformat()
 
     alerts_df = get_all_active_alerts_with_contact()
@@ -120,7 +122,7 @@ def run_alert_checks():
                     f"🔔 {alert['ticker']} - {alert['method'].capitalize()} {alert['level_name']} "
                     f"seviyesine {alert['condition_type'].upper()} gerçekleşti!\n"
                     f"Seviye: {level_value:.2f} | Güncel fiyat: {today_ohlc['Close']:.2f}\n"
-                    f"Timeframe: {timeframe.capitalize()}"
+                    f"Zaman Aralığı: {timeframe.capitalize()}"
                 )
                 sent = send_telegram_message(alert["telegram_chat_id"], message)
                 if sent:
@@ -131,6 +133,8 @@ def run_alert_checks():
                     print(f"  ✗ Failed to send notification: {alert['username']} - {ticker} {alert['level_name']}")
 
     print(f"\nTotal {gonderilen} notifications sent.")
+    with open("alert_checker.log", "a", encoding="utf-8") as f:
+        f.write(f"[{datetime.now()}] Finished. {gonderilen} notifications sent.\n")
 
 if __name__ == "__main__":
     run_alert_checks()
