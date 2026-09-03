@@ -17,7 +17,7 @@ from datetime import datetime
 from data_fetcher import get_stock_data, resample_to_timeframe
 from pivot_calculations import calculate_all_pivots
 from backtester import check_touch, check_directional_break, check_pp_break, determine_level_type
-from database import get_all_active_alerts_with_contact, mark_alert_triggered
+from database import get_all_active_alerts_with_contact, mark_alert_triggered, create_tables
 from notifications import send_telegram_message
 
 def get_level_and_today_ohlc(ticker: str, timeframe: str, raw_df, fast_info_cache: dict):
@@ -78,6 +78,8 @@ def check_alert_condition(alert, pivots: dict, today_ohlc: dict) -> tuple[bool, 
 
 def run_alert_checks():
     """Tüm aktif alertleri kontrol edip gerekli Telegram bildirimlerini gönderir."""
+    create_tables()  # tablolar yoksa oluşturur -script self-contained yapılır
+
     with open("alert_checker.log", "a", encoding="utf-8") as f:
         f.write(f"\n[{datetime.now()}] alert_checker.py ran.\n")
     
