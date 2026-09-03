@@ -83,6 +83,29 @@ def cached_get_stock_data(ticker: str) -> pd.DataFrame:
     farklı seçimler yaptıkça Yahoo Finance'e tekrar tekrar istek atılmasını önler."""
     return get_stock_data(ticker)
 
+@st.cache_data(ttl=600)
+def cached_get_pivot_stats(ticker: str, timeframe: str) -> pd.DataFrame:
+    """get_pivot_stats'ı 10 dakika önbelleğe alır. 
+    Bu veri sadece update_data.py veya alert_checker.py çalıştığında değişir 
+    -kullanıcının her sekme/widget etkileşiminde Turso'ya tekrar tekrar gitmesini önler."""
+    return get_pivot_stats(ticker, timeframe)
+
+@st.cache_data(ttl=600)
+def cached_get_confluence_zones(ticker: str, timeframe: str) -> pd.DataFrame:
+    return get_confluence_zones(ticker, timeframe)
+
+@st.cache_data(ttl=600)
+def cached_get_last_update_time(ticker: str, timeframe: str):
+    return get_last_update_time(ticker, timeframe)
+
+@st.cache_data(ttl=600)
+def cached_screen_by_touch_probability(timeframe, method, level_name, min_touch_pct):
+    return screen_by_touch_probability(timeframe, method, level_name, min_touch_pct)
+
+@st.cache_data(ttl=600)
+def cached_screen_by_confluence(timeframe, min_method_count):
+    return screen_by_confluence(timeframe, min_method_count)
+
 def reconstruct_zones_from_db(df_zones: pd.DataFrame) -> list:
     zones = []
     for zone_id, group in df_zones.groupby("zone_id"):
@@ -106,7 +129,7 @@ timeframe = st.sidebar.selectbox("Timeframe", TIMEFRAMES, format_func=str.capita
 method = st.sidebar.selectbox("The Pivot Method", PIVOT_METHODS, format_func=str.capitalize)
 periods_to_show = st.sidebar.slider("Periods to Show in Chart", 7, 365, 180)
 
-last_update = get_last_update_time(ticker, timeframe)
+last_update = cached_get_last_update_time(ticker, timeframe)
 if last_update:
     st.sidebar.caption(f"🕒Last updated: {last_update}")
 else:
@@ -183,7 +206,7 @@ with tab1:
 
 with tab2:
     st.subheader(f"{ticker} - Confluence Zones ({timeframe.capitalize()})")
-    df_zones_db = get_confluence_zones(ticker, timeframe=timeframe)
+    df_zones_db = cached_get_confluence_zones(ticker, timeframe)
 
     if df_zones_db.empty:
         st.info(
@@ -204,7 +227,7 @@ with tab2:
 
 with tab3:
     st.subheader(f"{ticker} - Backtest Statistics ({timeframe.capitalize()}, Touch / Break Probabilities)")
-    stats_df = get_pivot_stats(ticker, timeframe=timeframe)
+    stats_df = cached_get_pivot_stats(ticker, timeframe)
 
     if stats_df.empty:
         st.info(
@@ -271,9 +294,8 @@ with tab4:
             )
         min_touch = st.slider("Minimum Touch Probability (%)", 0, 100, 50, key="screener_touch") / 100
 
-        results = screen_by_touch_probability(
-            timeframe=screener_timeframe, method=screener_method,
-            level_name=screener_level, min_touch_pct=min_touch,
+        results = cached_screen_by_touch_probability(
+            screener_timeframe, screener_method, screener_level, min_touch
         )
 
         if results.empty:
@@ -301,7 +323,7 @@ with tab4:
             " Higher thresholds(4-5) yield more selective, potentially more meaningful results."
         )
 
-        results = screen_by_confluence(timeframe=screener_timeframe, min_method_count=min_methods)
+        results = cached_screen_by_confluence(screener_timeframe, min_methods)
 
         if results.empty:
             st.info("No stocks match this criteria. Try lowering the minimum method count.")
