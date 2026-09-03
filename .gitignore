@@ -1,3 +1,8 @@
 .env
 venv/
 data/*.db
+data/*.db-wal
+data/*.db-shm
+__pycache__/
+*.pyc
+alert_checker.log

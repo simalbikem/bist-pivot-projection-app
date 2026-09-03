@@ -4,12 +4,25 @@ Backtest sonuçlarını (pivot_stats) ve confluence zone verilerini SQLite verit
 import sqlite3
 import pandas as pd
 
-from config import DATABASE_PATH
+from config import DATABASE_PATH, get_secret
 
-def get_connection() -> sqlite3.Connection:
-    """Veritabanına bağlantı açar. FOREIGN KEY kısıtlamalarının çalışması için PRAGMA ayarını da burada aktif eder 
-    -SQLite'ta bu varsayılan olarak KAPALIDIR, her bağlantıda ayrıca açılması gerekir."""
-    conn = sqlite3.connect(DATABASE_PATH)
+def get_connection():
+    """Veritabanına bağlantı açar. FOREIGN KEY kısıtlamalarının çalışması için PRAGMA ayarını da burada aktif eder.
+        USE_TURSO ortam değişkeni "true" ise (sadece deploy edilmiş/canlı ortamda ayarlanır), Turso'ya bağlanır. 
+        Aksi halde (yerel geliştirme/test ortamı -varsayılan), yerel SQLite dosyasına bağlanır."""
+    use_turso_value = get_secret("USE_TURSO")
+    use_turso = (use_turso_value or "false").lower() == "true"
+
+    if use_turso:
+        import libsql
+        conn = libsql.connect(
+            database=get_secret("TURSO_DATABASE_URL"),
+            auth_token=get_secret("TURSO_AUTH_TOKEN"),
+        )
+    
+    else:
+        conn = sqlite3.connect(DATABASE_PATH)
+
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 

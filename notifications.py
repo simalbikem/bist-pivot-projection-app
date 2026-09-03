@@ -1,18 +1,16 @@
-"""
-Telegram Bot API üzerinden kullanıcılara bildirim mesajı gönderir.
-"""
-import os
+"""Telegram Bot API üzerinden kullanıcılara bildirim mesajı gönderir.
+TELEGRAM_BOT_TOKEN, get_secret() ile okunur -.env dosyasından, Streamlit Cloud ortamında st.secrets'tan. 
+Böylece bu dosya hem yerelde hem buluta deploy edildiğinde değişiklik gerektirmeden çalışır."""
 import requests
-from dotenv import load_dotenv
+from config import get_secret
 
-load_dotenv()
-
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_BOT_TOKEN = get_secret("TELEGRAM_BOT_TOKEN")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
 def send_telegram_message(chat_id: str, text: str) -> bool:
+    """Belirtilen Telegram chat_idsine metin mesajı gönderir."""
     if not TELEGRAM_BOT_TOKEN:
-        print("HATA: TELEGRAM_BOT_TOKEN .env dosyasında bulunamadı.")
+        print("HATA: TELEGRAM_BOT_TOKEN bulunamadı (.env veya st.secrets).")
         return False
 
     try:
@@ -33,7 +31,7 @@ def send_telegram_message(chat_id: str, text: str) -> bool:
         print(f"HATA: Telegram API'sine bağlanılamadı: {e}")
         return False
 
-# Hızlı test
+# Hızlı test 
 if __name__ == "__main__":
     from database import get_telegram_chat_id
 
@@ -44,6 +42,6 @@ if __name__ == "__main__":
     else:
         basarili = send_telegram_message(
             test_chat_id,
-            "🎉 The BIST Pivot Alert Bot connection was successful! This is a test message."
+            "🎉BIST Pivot Alert Bot bağlantısı başarılı! Bu bir test mesajıdır."
         )
         print("Mesaj gönderildi mi:", basarili)

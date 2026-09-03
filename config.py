@@ -3,10 +3,26 @@ import os
 
 load_dotenv()
 
-COOKIE_KEY = os.getenv("COOKIE_KEY")
+def get_secret(key: str) -> str | None:
+    """Bir gizli değeri önce ortam değişkenlerinden (.env),
+    bulunamazsa Streamlit Cloud'un st.secrets mekanizmasından okur. """
+    value = os.getenv(key)
+    if value is not None:
+        return value
+    
+    try:
+        import streamlit as st
+        return st.secrets.get(key)
+    
+    except Exception:
+        return None
+
+
+COOKIE_KEY = get_secret("COOKIE_KEY")
 if COOKIE_KEY is None:
     raise ValueError(
-        "COOKIE_KEY .env dosyasinda bulunamadi."
+        "COOKIE_KEY bulunamadi. Yerelde .env dosyasina 'COOKIE_KEY=<rastgele_string>' "
+        "ekleyin, ya da Streamlit Cloud'da 'Secrets' bolumune COOKIE_KEY ekleyin."
     )
 
 BIST_STOCKS = [
