@@ -267,13 +267,22 @@ def migrate_add_users_table():
     conn.close()
 
 def create_user(username: str, plain_password: str, email: str, first_name: str, last_name: str) -> bool:
-    """Yeni bir kullanıcı kaydeder. Şifre burada, streamlit_authenticator'ın Hasher.hash() fonksiyonuyla hash'lenerek saklanır."""
+    """Yeni bir kullanıcı kaydeder. 
+    Şifre, streamlit_authenticatorın Hasher.hash() fonksiyonuyla hashlenerek saklanır -asla düz metin saklanmaz."""
     import streamlit_authenticator as stauth
-
-    hashed = stauth.Hasher.hash(plain_password)
 
     conn = get_connection()
     cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT 1 FROM users WHERE username = ? OR email = ?", (username, email)
+    )
+    if cursor.fetchone() is not None:
+        conn.close()
+        return False
+
+    hashed = stauth.Hasher.hash(plain_password)
+
     try:
         cursor.execute("""
             INSERT INTO users (username, hashed_password, email, first_name, last_name)
@@ -281,8 +290,7 @@ def create_user(username: str, plain_password: str, email: str, first_name: str,
         """, (username, hashed, email, first_name, last_name))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
-        # UNIQUE kısıtlaması ihlal edildi (username veya email zaten var)
+    except Exception:
         return False
     finally:
         conn.close()
@@ -377,27 +385,42 @@ def get_alerts_for_user(user_id: int) -> pd.DataFrame:
     return df
 
 def delete_alert(alert_id: int, user_id: int) -> bool:
-    """Bir alerti siler -sadece o alert'in gerçekten user_id'ye ait olması durumunda. 
-    Böylece bir kullanıcının başka birinin alert IDsini tahmin edip silmesi engellenir."""
+    """Bir alerti siler -SADECE o alertin gerçekten user_id'ye ait olması durumunda. 
+    Böylece bir kullanıcının başka birinin alert ID'sini tahmin edip silmesi engellenir."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM alerts WHERE id = ? AND user_id = ?", (alert_id, user_id))
-    affected = cursor.rowcount
-    conn.commit()
+
+    cursor.execute(
+        "SELECT 1 FROM alerts WHERE id = ? AND user_id = ?", (alert_id, user_id)
+    )
+    exists = cursor.fetchone() is not None
+
+    if exists:
+        cursor.execute("DELETE FROM alerts WHERE id = ? AND user_id = ?", (alert_id, user_id))
+        conn.commit()
+
     conn.close()
-    return affected > 0
+    return exists
 
 def set_alert_active(alert_id: int, user_id: int, active: bool) -> bool:
+    """Bir alerti aktif/pasif yapar  delete_alert ile aynı sahiplik kontrolüyle."""
     conn = get_connection()
     cursor = conn.cursor()
+
     cursor.execute(
-        "UPDATE alerts SET active = ? WHERE id = ? AND user_id = ?",
-        (1 if active else 0, alert_id, user_id),
+        "SELECT 1 FROM alerts WHERE id = ? AND user_id = ?", (alert_id, user_id)
     )
-    affected = cursor.rowcount
-    conn.commit()
+    exists = cursor.fetchone() is not None
+
+    if exists:
+        cursor.execute(
+            "UPDATE alerts SET active = ? WHERE id = ? AND user_id = ?",
+            (1 if active else 0, alert_id, user_id),
+        )
+        conn.commit()
+
     conn.close()
-    return affected > 0
+    return exists
 
 def get_all_active_alerts_with_contact() -> pd.DataFrame:
     """alert_checker.py için: TÜM kullanıcıların aktif alertlerini, onları oluşturan kullanıcının telegram_chat_idsiyle JOIN ederek döner."""
@@ -537,16 +560,21 @@ def get_all_users_with_stats() -> pd.DataFrame:
     return df
 
 def delete_user_and_data(user_id: int) -> bool:
-    """Bir kullanıcıyı ve TÜM verilerini kalıcı olarak siler.
-    Önce alertler silinir(foreign key ilişkisi gereği), sonra kullanıcınınkendisi silinir."""
+    """Bir kullanıcıyı ve TÜM verilerini (alertleri dahil) kalıcı olarak siler.
+    Önce (foreign key ilişkisi gereği) alertler silinir, sonra kullanıcının kendisi silinir."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM alerts WHERE user_id = ?", (user_id,))
-    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    affected = cursor.rowcount
-    conn.commit()
+
+    cursor.execute("SELECT 1 FROM users WHERE id = ?", (user_id,))
+    exists = cursor.fetchone() is not None
+
+    if exists:
+        cursor.execute("DELETE FROM alerts WHERE user_id = ?", (user_id,))
+        cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
+
     conn.close()
-    return affected > 0
+    return exists
 
 # Hızlı test 
 if __name__ == "__main__":

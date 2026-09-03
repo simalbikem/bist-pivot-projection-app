@@ -5,3 +5,4 @@ numpy
 yfinance
 pytest
 python-dotenv
+libsql
