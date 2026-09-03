@@ -6,3 +6,5 @@ yfinance
 pytest
 python-dotenv
 libsql
+streamlit-authenticator
+requests
