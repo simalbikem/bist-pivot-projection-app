@@ -306,9 +306,9 @@ with tab4:
             min_sample = results["sample_size"].min()
             if min_sample < LOW_SAMPLE_SIZE_THRESHOLD:
                 st.warning(
-                    f"⚠️Low sample size detected (as low as n={min_sample}). "
-                    f"Results based on fewer than {LOW_SAMPLE_SIZE_THRESHOLD} observations may be less reliable."
-                    f"This is expected for 'monthly' timeframe or recently listed stocks."
+                    f"⚠️Low sample size detected."
+                    f" Results based on fewer than {LOW_SAMPLE_SIZE_THRESHOLD} observations may be less reliable."
+                    f" This is expected for 'monthly' timeframe or recently listed stocks."
                 )
 
             display = results.copy()

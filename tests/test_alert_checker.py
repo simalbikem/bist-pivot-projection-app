@@ -121,6 +121,7 @@ def _fake_fast_info():
 
 def test_run_alert_checks_sends_message_and_marks_triggered(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)  # log dosyası gerçek proje klasörünü kirletmesin
+    monkeypatch.setattr(alert_checker, "create_tables", lambda: None)  # tmp_path'te data/ klasörü yok, çağrıyı devre dışı bırak
 
     fake_alerts = pd.DataFrame([{
         "id": 1, "user_id": 1, "ticker": "AAA.IS", "method": "classic", "timeframe": "daily",
@@ -160,6 +161,7 @@ def test_run_alert_checks_sends_message_and_marks_triggered(monkeypatch, tmp_pat
 def test_run_alert_checks_skips_already_triggered_today(monkeypatch, tmp_path):
     """Bugün zaten tetiklenmiş bir alert TEKRAR mesaj göndermemeli."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(alert_checker, "create_tables", lambda: None)
 
     from datetime import date
     today_str = date.today().isoformat()
@@ -197,6 +199,7 @@ def test_run_alert_checks_skips_already_triggered_today(monkeypatch, tmp_path):
 def test_run_alert_checks_handles_no_active_alerts(monkeypatch, tmp_path):
     """Hiç aktif alert yoksa, hata fırlatmadan sessizce çıkmalı."""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(alert_checker, "create_tables", lambda: None)
     monkeypatch.setattr(alert_checker, "get_all_active_alerts_with_contact", lambda: pd.DataFrame())
 
     run_alert_checks()  # hata fırlatmamalı

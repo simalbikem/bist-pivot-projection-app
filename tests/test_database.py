@@ -541,3 +541,76 @@ def test_migrate_add_pending_link_code_column_is_idempotent(temp_db):
     from database import migrate_add_pending_link_code_column
     migrate_add_pending_link_code_column()
     migrate_add_pending_link_code_column()
+
+# ---------------------------------------------------------
+# Dual-mode bağlantı (get_connection) testleri
+# ---------------------------------------------------------
+def test_get_connection_uses_local_sqlite_when_use_turso_false(monkeypatch):
+    """USE_TURSO tanımsız/false iken, get_connectionın yerel sqlite3'e bağlandığını doğrular."""
+    monkeypatch.setattr(database, "get_secret", lambda key: None if key == "USE_TURSO" else "dummy")
+
+    conn = database.get_connection()
+
+    assert isinstance(conn, sqlite3.Connection)
+    conn.close()
+
+def test_get_connection_uses_turso_when_use_turso_true(monkeypatch):
+    """USE_TURSO=true iken, get_connectionın libsql.connecti (gerçek ağ bağlantısı kurmadan, mocklanarak) doğru parametrelerle çağırdığını doğrular."""
+    calls = {}
+
+    class FakeLibsqlConn:
+        def execute(self, *args, **kwargs):
+            return None
+
+    def fake_libsql_connect(database, auth_token):
+        calls["database"] = database
+        calls["auth_token"] = auth_token
+        return FakeLibsqlConn()
+
+    def fake_get_secret(key):
+        return {
+            "USE_TURSO": "true",
+            "TURSO_DATABASE_URL": "libsql://sahte-url.turso.io",
+            "TURSO_AUTH_TOKEN": "sahte-token",
+        }.get(key)
+
+    monkeypatch.setattr(database, "get_secret", fake_get_secret)
+
+    # libsql modülünü, get_connection içindeki "import libsql" satırı çalıştığında sahte modülümüzü bulacak şekilde enjekte ediyoruz.
+    import sys
+    import types
+    fake_libsql_module = types.ModuleType("libsql")
+    fake_libsql_module.connect = fake_libsql_connect
+    monkeypatch.setitem(sys.modules, "libsql", fake_libsql_module)
+
+    conn = database.get_connection()
+
+    assert calls["database"] == "libsql://sahte-url.turso.io"
+    assert calls["auth_token"] == "sahte-token"
+    assert isinstance(conn, FakeLibsqlConn)
+
+def test_get_connection_use_turso_is_case_insensitive(monkeypatch):
+    """'TRUE', 'True', 'true' hepsi Turso moduna geçirmelidir -büyük/küçük harf duyarlılığı olmamalıdır."""
+    import sys
+    import types
+
+    def fake_get_secret(key):
+        return {
+            "USE_TURSO": "TRUE",  # büyük harfle
+            "TURSO_DATABASE_URL": "libsql://test.turso.io",
+            "TURSO_AUTH_TOKEN": "token",
+        }.get(key)
+
+    monkeypatch.setattr(database, "get_secret", fake_get_secret)
+
+    class FakeLibsqlConn:
+        def execute(self, *args, **kwargs):
+            return None
+
+    fake_libsql_module = types.ModuleType("libsql")
+    fake_libsql_module.connect = lambda database, auth_token: FakeLibsqlConn()
+    monkeypatch.setitem(sys.modules, "libsql", fake_libsql_module)
+
+    conn = database.get_connection()
+
+    assert isinstance(conn, FakeLibsqlConn)
