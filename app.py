@@ -302,14 +302,32 @@ with tab4:
             st.info("No stocks match this criteria. Try lowering the threshold.")
         else:
             st.success(f"{len(results)} stocks found, sorted by touch probability.")
+
+            min_sample = results["sample_size"].min()
+            if min_sample < LOW_SAMPLE_SIZE_THRESHOLD:
+                st.warning(
+                    f"⚠️Low sample size detected (as low as n={min_sample}). "
+                    f"Results based on fewer than {LOW_SAMPLE_SIZE_THRESHOLD} observations may be less reliable."
+                    f"This is expected for 'monthly' timeframe or recently listed stocks."
+                )
+
             display = results.copy()
             for col in ["touch_probability", "break_probability", "break_up_probability", "break_down_probability"]:
                 display[col] = (display[col] * 100).round(1)
+
+            display["sample_size_display"] = display["sample_size"].apply(
+                lambda n: f"⚠️ {n}" if n < LOW_SAMPLE_SIZE_THRESHOLD else str(n)
+            )
+
+            display_cols = [
+                "ticker", "touch_probability", "break_probability",
+                "break_up_probability", "break_down_probability", "sample_size_display",
+            ]
             st.dataframe(
-                display.rename(columns={
+                display[display_cols].rename(columns={
                     "ticker": "Ticker", "touch_probability": "Touch %",
                     "break_probability": "Break %", "break_up_probability": "Break Up %",
-                    "break_down_probability": "Break Down %", "sample_size": "Sample Size",
+                    "break_down_probability": "Break Down %", "sample_size_display": "Sample Size",
                 }),
                 hide_index=True, use_container_width=True,
             )
