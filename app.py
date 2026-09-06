@@ -47,8 +47,13 @@ if "tables_initialized" not in st.session_state:
     create_tables()
     st.session_state["tables_initialized"] = True
 
+@st.cache_data(ttl=60)
+def cached_get_credentials_dict():
+    return get_credentials_dict()
+
+
 authenticator = stauth.Authenticate(
-    get_credentials_dict(),
+    cached_get_credentials_dict(),
     cookie_name="bist_pivot_auth",
     cookie_key=COOKIE_KEY,
     cookie_expiry_days=7,
@@ -94,13 +99,13 @@ elif st.session_state.get("authentication_status") is None:
                         reg_username, reg_password, reg_email, reg_first_name, reg_last_name
                     )
                     if success:
+                        cached_get_credentials_dict.clear()
                         st.success("Registration successful! Please log in above.")
                     else:
                         st.error("Username or email already exists.")
 
     st.stop()
 
-# Bu noktaya sadece authentication_status == True iken ulaşılır.
 authenticator.logout("Logout", "sidebar")
 st.sidebar.write(f"Welcome, {st.session_state['name']}!")
 
@@ -132,6 +137,22 @@ def cached_screen_by_touch_probability(timeframe, method, level_name, min_touch_
 @st.cache_data(ttl=600)
 def cached_screen_by_confluence(timeframe, min_method_count):
     return screen_by_confluence(timeframe, min_method_count)
+
+@st.cache_data(ttl=300)
+def cached_is_user_admin(username: str) -> bool:
+    return is_user_admin(username)
+
+@st.cache_data(ttl=30)
+def cached_get_telegram_chat_id(username: str):
+    return get_telegram_chat_id(username)
+
+@st.cache_data(ttl=15)
+def cached_get_alerts_for_user(user_id: int) -> pd.DataFrame:
+    return get_alerts_for_user(user_id)
+
+@st.cache_data(ttl=15)
+def cached_get_all_users_with_stats() -> pd.DataFrame:
+    return get_all_users_with_stats()
 
 def reconstruct_zones_from_db(df_zones: pd.DataFrame) -> list:
     zones = []
@@ -209,7 +230,7 @@ for col, (method_name, levels) in zip(pp_cols, pivots.items()):
 # ---------------------------------------------------------
 # Sekmeler
 # ---------------------------------------------------------
-user_is_admin = is_user_admin(st.session_state["username"])
+user_is_admin = cached_is_user_admin(st.session_state["username"])
 
 tab_names = ["📈Pivot Graph", "🎯Confluence Zones", "📊Backtest Statistics", "🔍Screener", "🔔Alerts"]
 if user_is_admin:
@@ -405,7 +426,7 @@ if user_is_admin:
         st.subheader("🛠️Admin Panel")
         st.caption("Manage all registered users")
 
-        users_df = get_all_users_with_stats()
+        users_df = cached_get_all_users_with_stats()
 
         if users_df.empty:
             st.info("No users found.")
@@ -423,6 +444,7 @@ if user_is_admin:
                     if row["username"] != st.session_state["username"]:
                         if st.button("Delete User", key=f"admin_delete_{row['id']}"):
                             delete_user_and_data(int(row["id"]))
+                            cached_get_all_users_with_stats.clear()
                             st.success(f"Deleted user: {row['username']}")
                             st.rerun()
                     else:
@@ -431,11 +453,13 @@ if user_is_admin:
 with tab5:
     st.subheader("🔔My Alerts")
 
-    user_id = get_user_id(st.session_state["username"])
+    if "user_id" not in st.session_state:
+        st.session_state["user_id"] = get_user_id(st.session_state["username"])
+    user_id = st.session_state["user_id"]
 
-        # --- Telegram bağlantısı ---
+    # --- Telegram bağlantısı ---
     st.markdown("### Telegram Connection")
-    current_chat_id = get_telegram_chat_id(st.session_state["username"])
+    current_chat_id = cached_get_telegram_chat_id(st.session_state["username"])
 
     if current_chat_id:
         st.success("Telegram connected ✅")
@@ -465,6 +489,7 @@ with tab5:
             if st.button("Verify Connection"):
                 linked = verify_telegram_link(st.session_state["username"])
                 if linked:
+                    cached_get_telegram_chat_id.clear()
                     st.success("Telegram connected successfully! Refresh to see updated status.")
                 else:
                     st.error(
@@ -514,17 +539,18 @@ with tab5:
         create_submitted = st.form_submit_button("Create Alert")
 
         if create_submitted:
-            if not get_telegram_chat_id(st.session_state["username"]):
+            if not cached_get_telegram_chat_id(st.session_state["username"]):
                 st.error("Please link your Telegram Chat ID above before creating alerts.")
             else:
                 create_alert(user_id, alert_ticker, alert_method, alert_timeframe, alert_level, alert_condition)
+                cached_get_alerts_for_user.clear()
                 st.success(f"Alert created: {alert_ticker} {alert_method.capitalize()} {alert_level} ({alert_condition}).")
 
     st.divider()
 
     # --- Mevcut alertler ---
     st.markdown("### My Existing Alerts")
-    alerts_df = get_alerts_for_user(user_id)
+    alerts_df = cached_get_alerts_for_user(user_id)
 
     if alerts_df.empty:
         st.info("You haven't created any alerts yet.")
@@ -543,8 +569,10 @@ with tab5:
                 toggle_label = "Pause" if row["active"] else "Resume"
                 if st.button(toggle_label, key=f"toggle_{row['id']}"):
                     set_alert_active(int(row["id"]), user_id, not row["active"])
+                    cached_get_alerts_for_user.clear()
                     st.rerun()
             with cols[2]:
                 if st.button("Delete", key=f"delete_{row['id']}"):
                     delete_alert(int(row["id"]), user_id)
+                    cached_get_alerts_for_user.clear()
                     st.rerun()
