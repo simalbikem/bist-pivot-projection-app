@@ -25,6 +25,7 @@ jobs:
       - name: Run update_data.py
         env:
           COOKIE_KEY: ${{ secrets.COOKIE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           USE_TURSO: "true"
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
