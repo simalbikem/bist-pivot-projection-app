@@ -2,7 +2,7 @@ name: Update Data
 
 on:
   schedule:
-    # Her gün 16:00 UTC (19:00 Istanbul saati / Pazartesi-Cuma)
+    # Her gun 16:00 UTC (19:00 Istanbul saati / Pazartesi-Cuma) 
     - cron: '0 16 * * 1-5'
   workflow_dispatch:
 
@@ -28,4 +28,5 @@ jobs:
           USE_TURSO: "true"
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
         run: python update_data.py

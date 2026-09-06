@@ -2,7 +2,7 @@ name: Alert Checker
 
 on:
   schedule:
-    # 15 dakikada bir, 07:00-14:59 UTC (yaklaşık 10:00-18:00 Istanbul / Pazartesi-Cuma)
+    # Her 15 dakikada bir, 07:00-14:59 UTC arasi (yaklasik 10:00-18:00 Istanbul saati / Pazartesi-Cuma)
     - cron: '*/15 7-14 * * 1-5'
   workflow_dispatch:
 
@@ -28,4 +28,5 @@ jobs:
           USE_TURSO: "true"
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          PYTHONUNBUFFERED: "1"
         run: python alert_checker.py
