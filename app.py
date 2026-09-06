@@ -43,7 +43,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-create_tables()
+if "tables_initialized" not in st.session_state:
+    create_tables()
+    st.session_state["tables_initialized"] = True
 
 authenticator = stauth.Authenticate(
     get_credentials_dict(),
