@@ -1,12 +1,7 @@
-<<<<<<< Updated upstream
 # 📊 BIST Pivot-Point Based Stock Projection Tool
-=======
-# 📊 BIST Pivot Point Tabanlı Hisse Projeksiyon Sistemi
->>>>>>> Stashed changes
 Borsa İstanbul (BIST100) hisseleri için pivot-nokta tabanlı teknik analiz, confluence (kesişim bölgesi) tespiti, geçmiş performans istatistikleri ve gerçek zamanlı Telegram bildirimleri sunan çok kullanıcılı bir web uygulamasıdır.
 
 🔗 **Canlı Demo:** [bist-pivot-projection-app.streamlit.app](https://bist-pivot-projection-app.streamlit.app/)
-
 > ⚠️ **Yasal Uyarı:** Bu sistem yatırım tavsiyesi vermez. Pivot seviyeleri istatistiksel olarak hesaplanmış potansiyel destek/direnç bölgeleridir, kesin fiyat garantisi sunmaz.
 
 ---
@@ -39,50 +34,32 @@ Borsa İstanbul (BIST100) hisseleri için pivot-nokta tabanlı teknik analiz, co
 ---
 
 ## 📁 Proje Yapısı
-<<<<<<< Updated upstream
 
-```
-├── app.py # Streamlit ana uygulama
+├── app.py #Streamlit ana uygulama
 
-├── config.py # Ayarlar, ortam değişkenleri
+├── config.py #Ayarlar, ortam değişkenleri
 
-├── data_fetcher.py # yfinance veri çekme, resampling
+├── data_fetcher.py #yfinance veri çekme, resampling
 
-├── pivot_calculations.py # 5 pivot yöntemi hesaplama motoru
+├── pivot_calculations.py #5 pivot yöntemi hesaplama motoru
 
-├── confluence.py # Kesişim bölgesi tespiti
+├── confluence.py #Kesişim bölgesi tespiti
 
-├── backtester.py # Touch/break istatistik motoru
+├── backtester.py #Touch/break istatistik motoru
 
-├── database.py # SQLite/Turso veritabanı katmanı
+├── database.py #SQLite/Turso veritabanı katmanı
 
-├── notifications.py # Telegram "Alert" gönderimi
+├── notifications.py #Telegram "Alert" gönderimi
 
-├── alert_checker.py # Alert kontrol scripti (GitHub Actions ile otomatik)
+├── alert_checker.py #Alert kontrol scripti (GitHub Actions ile otomatik)
 
-├── update_data.py # Backtest/confluence veri güncelleme scripti
+├── update_data.py #Backtest/confluence veri güncelleme scripti
 
-├── charts.py # Plotly grafik üretimi
+├── charts.py #Plotly grafik üretimi
 
-├── tests/ # pytest test paketi
+├── tests/ #pytest test paketi
 
-└── .github/workflows/ # Otomatik veri güncelleme ve alert kontrolü
-```
-=======
-├── app.py # Streamlit ana uygulama
-├── config.py # Ayarlar, ortam değişkenleri
-├── data_fetcher.py # yfinance veri çekme, resampling
-├── pivot_calculations.py # 5 pivot yöntemi hesaplama motoru
-├── confluence.py # Kesişim bölgesi tespiti
-├── backtester.py # Touch/break istatistik motoru
-├── database.py # SQLite/Turso veritabanı katmanı
-├── notifications.py # Telegram "Alert" gönderimi
-├── alert_checker.py # Alert kontrol scripti (GitHub Actions ile otomatik)
-├── update_data.py # Backtest/confluence veri güncelleme scripti
-├── charts.py # Plotly grafik üretimi
-├── tests/ # pytest test paketi
-└── .github/workflows/ # Otomatik veri güncelleme ve alert kontrolü
->>>>>>> Stashed changes
+└── .github/workflows/ #Otomatik veri güncelleme ve alert kontrolü
 
 ---
 
@@ -107,17 +84,11 @@ pip install -r requirements.txt
 ```
 
 **4. `.env` dosyası oluşturun:**
-<<<<<<< Updated upstream
 ```bash
 COOKIE_KEY=<rastgele_güvenli_bir_anahtar>
 TELEGRAM_BOT_TOKEN=<telegram_bot_tokeniniz>
 USE_TURSO=false
 ```
-=======
-COOKIE_KEY=<rastgele_güvenli_bir_anahtar>
-TELEGRAM_BOT_TOKEN=<telegram_bot_tokeniniz>
-USE_TURSO=false
->>>>>>> Stashed changes
 > `USE_TURSO=false` iken uygulama yerel SQLite dosyasını (`data/bist_pivot.db`) kullanır. Buluta bağlanmak isterseniz `USE_TURSO=true` yapıp `TURSO_DATABASE_URL` ve `TURSO_AUTH_TOKEN` değerlerini de ekleyin.
 
 **5. Hisse verilerini ve backtest istatistiklerini oluşturun:**
@@ -148,19 +119,11 @@ Proje, GitHub Actions ile iki zamanlanmış görev çalıştırır:
 ---
 
 ## 👤 Geliştirici
-
 **Şimal Bikem CEYLAN**
-<<<<<<< Updated upstream
 
-=======
->>>>>>> Stashed changes
 Yalova Üniversitesi | Bilgisayar Mühendisliği
 
 ---
 
 ## 📄 Lisans
-<<<<<<< Updated upstream
-Bu proje bahsi geçen şahsın **Türkiye Vakıflar Bankası T.A.O. | İzleme ve Takip Uygulama Geliştirme Departmanı | Zorunlu Üniversite Stajı** kapsamında geliştirilmiştir.
-=======
-Bu proje bahsi geçen şahısın Türkiye Vakıflar Bankası T.A.O. | İzleme ve Takip Uygulama Geliştirme Departmanı | Zorunlu Üniversite Stajı kapsamında geliştirilmiştir.
->>>>>>> Stashed changes
+Bu proje bahsi geçen şahısın **Türkiye Vakıflar Bankası T.A.O. | İzleme ve Takip Uygulama Geliştirme Departmanı | Zorunlu Üniversite Stajı** kapsamında geliştirilmiştir.
