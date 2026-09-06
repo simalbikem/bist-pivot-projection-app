@@ -18,6 +18,31 @@ from charts import plot_candlestick_with_pivots, plot_confluence_zones
 
 st.set_page_config(page_title="BIST Pivot Projection System", layout="wide")
 
+st.markdown(
+    """
+    <style>
+    [data-testid="stTabs"] [role="tablist"] {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+    [data-testid="stTabs"] button[role="tab"] {
+        white-space: nowrap;
+    }
+    @media (max-width: 480px) {
+        [data-testid="stTabs"] button[role="tab"] {
+            padding: 6px 8px;
+            min-width: unset;
+        }
+        [data-testid="stTabs"] button[role="tab"] p {
+            font-size: 0.72rem;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 create_tables()
 
 authenticator = stauth.Authenticate(
@@ -267,6 +292,15 @@ with tab3:
             }),
             hide_index=True,
             use_container_width=True,
+
+            column_config={
+                "Level": st.column_config.TextColumn(width="small"),
+                "Touch %": st.column_config.NumberColumn(width="small"),
+                "Break %": st.column_config.NumberColumn(width="small"),
+                "Break Up %": st.column_config.NumberColumn(width="small"),
+                "Break Down %": st.column_config.NumberColumn(width="small"),
+                "Sample Size": st.column_config.TextColumn(width="small"),
+            },
         )
 
 with tab4:
@@ -330,6 +364,15 @@ with tab4:
                     "break_down_probability": "Break Down %", "sample_size_display": "Sample Size",
                 }),
                 hide_index=True, use_container_width=True,
+
+                column_config={
+                    "Ticker": st.column_config.TextColumn(width="small"),
+                    "Touch %": st.column_config.NumberColumn(width="small"),
+                    "Break %": st.column_config.NumberColumn(width="small"),
+                    "Break Up %": st.column_config.NumberColumn(width="small"),
+                    "Break Down %": st.column_config.NumberColumn(width="small"),
+                    "Sample Size": st.column_config.TextColumn(width="small"),
+                },
             )
 
     else:  # Confluence Strength
