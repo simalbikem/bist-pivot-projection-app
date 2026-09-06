@@ -122,7 +122,7 @@ def create_tables():
 def save_pivot_stats(ticker: str, stats: dict, timeframe: str = "daily"):
     """Aynı ticker + timeframe kombinasyonu için önceki kayıtlar önce silinir, 
     böylece backtest tekrar çalıştırdığında veri çoğalmaz, güncellenir. 
-    Farklı timeframelerin birbirini silmemesi için WHERE koşuluna timeframe da eklenmiştir."""
+    Farklı timeframelerin birbirini silmemesi için WHERE koşuluna timeframe de eklenmiştir."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -130,57 +130,99 @@ def save_pivot_stats(ticker: str, stats: dict, timeframe: str = "daily"):
         "DELETE FROM pivot_stats WHERE ticker = ? AND timeframe = ?",
         (ticker, timeframe),
     )
-
+    rows = []
+    
     for method, levels in stats.items():
         for level_name, s in levels.items():
-            cursor.execute("""
-                INSERT INTO pivot_stats
-                    (ticker, method, level_name, timeframe, touch_probability,
-                     break_probability, break_up_probability,
-                     break_down_probability, sample_size, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, (
+            rows.append((
                 ticker, method, level_name, timeframe,
                 s["touch_probability"], s["break_probability"],
                 s["break_up_probability"], s["break_down_probability"],
                 s["sample_size"],
             ))
 
+    if rows:
+        placeholders = ", ".join(["(?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)"] * len(rows))
+        flat_values = [value for row in rows for value in row]
+
+        cursor.execute(f"""
+            INSERT INTO pivot_stats
+                (ticker, method, level_name, timeframe, touch_probability,
+                 break_probability, break_up_probability,
+                 break_down_probability, sample_size, updated_at)
+            VALUES {placeholders}
+        """, flat_values)
+
     conn.commit()
     conn.close()
 
 def save_confluence_zones(ticker: str, zones: list, timeframe: str = "daily"):
-    """Aynı ticker + timeframe kombinasyonu için önceki zonelar silinir
-    -ancak önce contributors'ın silinmesi gerekir."""
+    """Aynı ticker + timeframe kombinasyonu için önceki zonelar silinir -ancak önce contributorsın silinmesi gerekir.
+    PERFORMANS NOTU: Turso (uzak/bulut veritabanı) kullanıldığında her ayrı SQL ifadesi bir ağ gidiş-dönüşü demektir. 
+    Bu yüzden tüm yazma işlemleri mümkün olduğunca az sayıda ifadede toplanır:
+      1. Tüm zonelar TEK çok satırlı INSERT ile yazılır
+      2. Yeni zone_idler TEK SELECT ile geri okunur
+      3. Tüm contributors TEK çok satırlı INSERT ile yazılır
+    ID EŞLEŞTİRME: Zonelar toplu yazıldığı için cursor.lastrowid ile tek tek ID alamıyoruz. 
+    Bunun yerine, yazma sonrası zone_idleri ORDER BY zone_id ile okuyoruz."""
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Önce bu ticker + timeframe'e ait eski zone_idleri bulunur, sonra contributors silinir.
+    # --- 1. Eski verileri temizle ---
     cursor.execute(
         "SELECT zone_id FROM confluence_zones WHERE ticker = ? AND timeframe = ?",
         (ticker, timeframe),
     )
     old_zone_ids = [row[0] for row in cursor.fetchall()]
-    for zid in old_zone_ids:
-        cursor.execute("DELETE FROM confluence_contributors WHERE zone_id = ?", (zid,))
+
+    if old_zone_ids:
+        id_placeholders = ", ".join(["?"] * len(old_zone_ids))
+        cursor.execute(
+            f"DELETE FROM confluence_contributors WHERE zone_id IN ({id_placeholders})",
+            old_zone_ids,
+        )
+
     cursor.execute(
         "DELETE FROM confluence_zones WHERE ticker = ? AND timeframe = ?",
         (ticker, timeframe),
     )
 
+    if not zones:
+        conn.commit()
+        conn.close()
+        return
+
+    # --- 2. Tüm zoneları TEK INSERT ile yaz ---
+    zone_placeholders = ", ".join(["(?, ?, ?, ?)"] * len(zones))
+    zone_values = []
     for zone in zones:
-        cursor.execute("""
-            INSERT INTO confluence_zones (ticker, timeframe, center, method_count)
-            VALUES (?, ?, ?, ?)
-        """, (ticker, timeframe, zone["center"], zone["method_count"]))
+        zone_values.extend([ticker, timeframe, zone["center"], zone["method_count"]])
 
-        new_zone_id = cursor.lastrowid
+    cursor.execute(f"""
+        INSERT INTO confluence_zones (ticker, timeframe, center, method_count)
+        VALUES {zone_placeholders}
+    """, zone_values)
 
+    # --- 3. Yeni zone_idleri TEK SELECT ile geri oku ---
+    cursor.execute(
+        "SELECT zone_id FROM confluence_zones WHERE ticker = ? AND timeframe = ? ORDER BY zone_id",
+        (ticker, timeframe),
+    )
+    new_zone_ids = [row[0] for row in cursor.fetchall()]
+
+    # --- 4. Tüm contributorsı TEK INSERT ile yaz ---
+    contributor_values = []
+    for zone_id, zone in zip(new_zone_ids, zones):
         for c in zone["contributors"]:
-            cursor.execute("""
-                INSERT INTO confluence_contributors (zone_id, method, level_name, value)
-                VALUES (?, ?, ?, ?)
-            """, (new_zone_id, c["method"], c["level"], c["value"]))
+            contributor_values.extend([zone_id, c["method"], c["level"], c["value"]])
+
+    if contributor_values:
+        contributor_count = len(contributor_values) // 4
+        contrib_placeholders = ", ".join(["(?, ?, ?, ?)"] * contributor_count)
+        cursor.execute(f"""
+            INSERT INTO confluence_contributors (zone_id, method, level_name, value)
+            VALUES {contrib_placeholders}
+        """, contributor_values)
 
     conn.commit()
     conn.close()
