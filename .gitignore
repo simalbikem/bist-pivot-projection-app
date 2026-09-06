@@ -6,3 +6,4 @@ data/*.db-shm
 __pycache__/
 *.pyc
 alert_checker.log
+.pytest_cache/
