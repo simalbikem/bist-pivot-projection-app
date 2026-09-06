@@ -631,6 +631,17 @@ def delete_user_and_data(user_id: int) -> bool:
     conn.close()
     return exists
 
+def get_admin_chat_ids() -> list:
+    """Admin yetkisine sahip ve Telegram hesabı bağlı olan kullanıcıların chat IDlerini döner. 
+    Sistem raporlarının kime gönderileceğini belirlemek için kullanılır.
+    is_admin sütunu üzerinden çalıştığı için, ileride başka bir kullanıcı admin yapıldığında kod değişikliğine gerek kalmadan o da rapor alır."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT telegram_chat_id FROM users WHERE is_admin = 1 AND telegram_chat_id IS NOT NULL"
+    ).fetchall()
+    conn.close()
+    return [row[0] for row in rows]
+
 # Hızlı test 
 if __name__ == "__main__":
     from config import BIST_STOCKS

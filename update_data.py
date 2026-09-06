@@ -1,12 +1,18 @@
+import time
+from datetime import datetime
+
 from config import BIST_STOCKS, TIMEFRAMES
 from data_fetcher import get_stock_data, resample_to_timeframe
 from pivot_calculations import calculate_all_pivots
 from confluence import find_confluence_zones
 from backtester import backtest_stock
-from database import create_tables, save_pivot_stats, save_confluence_zones
+from database import create_tables, save_pivot_stats, save_confluence_zones, get_admin_chat_ids
+from notifications import send_telegram_message
 
 def update_single_stock_timeframe(ticker: str, timeframe: str, raw_df) -> bool:
-    """Tek bir hisse + tek bir zaman dilimi için backtest + confluence değerini hesaplayıp kaydeder."""
+    """Tek bir hisse + tek bir zaman dilimi için backtest + confluence değerini hesaplayıp kaydeder.
+    raw_df: ticker için önceden çekilmiş HAM GÜNLÜK veri 
+    -bu fonksiyon kendisi hiç yfinance çağırmaz, dışarıdan verilen veriyi kullanır."""
     stats = backtest_stock(ticker, timeframe=timeframe, raw_df=raw_df)
     if not stats:
         print(f"    UYARI: {timeframe} için backtest verisi yok, atlanıyor.")
@@ -18,7 +24,7 @@ def update_single_stock_timeframe(ticker: str, timeframe: str, raw_df) -> bool:
     df = resample_to_timeframe(raw_df, timeframe)
     if df.empty or len(df) < 2:
         print(f"    UYARI: {timeframe} için confluence hesaplanamadı (yetersiz veri).")
-        return True  # backtest zaten kaydedildi, kısmi başarı sayılır
+        return True
 
     prev_row = df.iloc[-2]
     today_row = df.iloc[-1]
@@ -35,19 +41,18 @@ def update_single_stock_timeframe(ticker: str, timeframe: str, raw_df) -> bool:
     return True
 
 def update_all_stocks():
-    """BIST_STOCKS listesindeki tüm hisseleri, TIMEFRAMES'teki tüm zaman dilimlerinde günceller."""
-    create_tables()  # tablolar yoksa oluşturur, migration da otomatik çalışır
-
+    baslangic = time.time()
+    create_tables() 
     basarili = []
     basarisiz = []
     total_combos = len(BIST_STOCKS) * len(TIMEFRAMES)
     combo_index = 0
 
     for ticker in BIST_STOCKS:
-        raw_df = get_stock_data(ticker)  
+        raw_df = get_stock_data(ticker)
 
         if raw_df.empty:
-            print(f"\n{ticker}: UYARI - veri çekilemedi, tüm zaman dilimleri atlanıyor.")
+            print(f"\n{ticker}: UYARI -veri çekilemedi, tüm zaman dilimleri atlanıyor.")
             for timeframe in TIMEFRAMES:
                 combo_index += 1
                 basarisiz.append(f"{ticker} ({timeframe})")
@@ -65,12 +70,39 @@ def update_all_stocks():
                 print(f"    HATA: {e}")
                 basarisiz.append(f"{ticker} ({timeframe})")
 
+    sure_dk = (time.time() - baslangic) / 60
+
     print(f"\n{'='*50}")
     print("ÖZET")
     print(f"{'='*50}")
     print(f"Başarılı: {len(basarili)}/{total_combos}")
+    print(f"Süre: {sure_dk:.1f} dakika")
     if basarisiz:
         print(f"Başarısız ({len(basarisiz)}): {basarisiz}")
+
+    # --- Adminlere Telegram raporu gönder ---
+    durum_ikonu = "✅" if not basarisiz else "⚠️"
+    rapor = (
+        f"{durum_ikonu} Veri Güncelleme Raporu\n\n"
+        f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+        f"Başarılı: {len(basarili)}/{total_combos}\n"
+        f"Süre: {sure_dk:.1f} dakika"
+    )
+    if basarisiz:
+        ornekler = ", ".join(basarisiz[:10])
+        rapor += f"\n\nBaşarısız ({len(basarisiz)}): {ornekler}"
+        if len(basarisiz) > 10:
+            rapor += f" ... (+{len(basarisiz) - 10} tane daha)"
+
+    admin_ids = get_admin_chat_ids()
+    if not admin_ids:
+        print("\nUYARI: Telegram bağlı admin kullanıcı bulunamadı, rapor gönderilemedi.")
+    else:
+        for chat_id in admin_ids:
+            if send_telegram_message(chat_id, rapor):
+                print(f"\nRapor gönderildi (chat_id: {chat_id})")
+            else:
+                print(f"\nUYARI: Rapor gönderilemedi (chat_id: {chat_id})")
 
 if __name__ == "__main__":
     update_all_stocks()
