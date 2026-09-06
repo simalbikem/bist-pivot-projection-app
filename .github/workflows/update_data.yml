@@ -1,0 +1,31 @@
+name: Update Data
+
+on:
+  schedule:
+    # Her gün 16:00 UTC (19:00 Istanbul saati / Pazartesi-Cuma)
+    - cron: '0 16 * * 1-5'
+  workflow_dispatch:  # GitHub arayuzunden elle tetikleme imkani (test icin)
+
+jobs:
+  update-backtest-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run update_data.py
+        env:
+          COOKIE_KEY: ${{ secrets.COOKIE_KEY }}
+          USE_TURSO: "true"
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: python update_data.py
