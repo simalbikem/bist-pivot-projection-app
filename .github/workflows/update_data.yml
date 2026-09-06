@@ -4,7 +4,7 @@ on:
   schedule:
     # Her gün 16:00 UTC (19:00 Istanbul saati / Pazartesi-Cuma)
     - cron: '0 16 * * 1-5'
-  workflow_dispatch:
+  workflow_dispatch:  # GitHub arayuzunden elle tetikleme imkani (test icin)
 
 jobs:
   update-backtest-data:
