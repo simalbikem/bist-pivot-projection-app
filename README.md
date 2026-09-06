@@ -35,6 +35,8 @@ Borsa İstanbul (BIST100) hisseleri için pivot-nokta tabanlı teknik analiz, co
 ---
 
 ## 📁 Proje Yapısı
+
+```
 ├── app.py # Streamlit ana uygulama
 
 ├── config.py # Ayarlar, ortam değişkenleri
@@ -60,6 +62,7 @@ Borsa İstanbul (BIST100) hisseleri için pivot-nokta tabanlı teknik analiz, co
 ├── tests/ # pytest test paketi
 
 └── .github/workflows/ # Otomatik veri güncelleme ve alert kontrolü
+```
 
 ---
 
