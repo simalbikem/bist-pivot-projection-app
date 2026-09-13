@@ -369,7 +369,8 @@ def _notify_admins_new_user(username: str, first_name: str, last_name: str, emai
         mesaj = (
             f"👤Yeni Kullanıcı Kaydı\n\n"
             f"Kullanıcı Adı: {username}\n"
-            f"Ad-Soyad: {first_name}|{last_name}\n"
+            f"Ad: {first_name}\n"
+            f"Soyad: {last_name}\n"
             f"E-posta: {email}\n"
             f"Kayıt Zamanı: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
