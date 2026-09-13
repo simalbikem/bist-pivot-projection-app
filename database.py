@@ -322,8 +322,6 @@ def migrate_add_users_table():
     conn.close()
 
 def create_user(username: str, plain_password: str, email: str, first_name: str, last_name: str) -> bool:
-    """Yeni bir kullanıcı kaydeder. 
-    Şifre, streamlit_authenticatorın Hasher.hash() fonksiyonuyla hashlenerek saklanır -asla düz metin saklanmaz."""
     import streamlit_authenticator as stauth
 
     conn = get_connection()
@@ -344,11 +342,44 @@ def create_user(username: str, plain_password: str, email: str, first_name: str,
             VALUES (?, ?, ?, ?, ?)
         """, (username, hashed, email, first_name, last_name))
         conn.commit()
-        return True
+        kayit_basarili = True
     except Exception:
-        return False
+        kayit_basarili = False
     finally:
         conn.close()
+
+    if kayit_basarili:
+        _notify_admins_new_user(username, first_name, last_name, email)
+
+    return kayit_basarili
+
+def _notify_admins_new_user(username: str, first_name: str, last_name: str, email: str):
+    """Yeni bir kullanıcı kaydolduğunda admine Telegram bildirimi gönderir.
+    Bu fonksiyon ASLA hata fırlatmaz -bildirim gönderimi başarısız olsa bile çağıran kod etkilenmez, çünkü kullanıcının kaydı zaten tamamlanmıştır.
+    Şifre veya şifre hashi bildirime KONMAZ."""
+    from datetime import datetime
+
+    try:
+        from notifications import send_telegram_message
+
+        admin_ids = get_admin_chat_ids()
+        if not admin_ids:
+            return
+
+        mesaj = (
+            f"👤 Yeni Kullanıcı Kaydı\n\n"
+            f"Kullanıcı adı: {username}\n"
+            f"Ad Soyad: {first_name} {last_name}\n"
+            f"E-posta: {email}\n"
+            f"Kayıt zamanı: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+
+        for chat_id in admin_ids:
+            send_telegram_message(chat_id, mesaj)
+
+    except Exception as e:
+        # Bildirim gönderilemedi ama kayıt zaten başarılı -sessizce loglar, çökmez.
+        print(f"UYARI: Yeni kullanıcı bildirimi gönderilemedi: {e}")
 
 def get_credentials_dict() -> dict:
     """Tüm kullanıcıları, streamlit_authenticator.Authenticate'in beklediği formatta bir sözlük olarak döner.
