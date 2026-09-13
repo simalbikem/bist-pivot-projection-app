@@ -647,21 +647,75 @@ def get_all_users_with_stats() -> pd.DataFrame:
     return df
 
 def delete_user_and_data(user_id: int) -> bool:
-    """Bir kullanıcıyı ve TÜM verilerini (alertleri dahil) kalıcı olarak siler.
-    Önce (foreign key ilişkisi gereği) alertler silinir, sonra kullanıcının kendisi silinir."""
+    """
+    Bir kullanıcıyı ve TÜM verilerini (alert'leri dahil) kalıcı olarak siler.
+    Önce alert'ler silinir (foreign key ilişkisi gereği), sonra kullanıcının
+    kendisi silinir.
+
+    DÜZELTME NOTU: delete_alert'teki ile aynı sebepten (rowcount'un Turso'da
+    güvenilmez olduğu doğrulandı), rowcount yerine ön-SELECT kontrolü
+    kullanılıyor.
+
+    ADMIN BİLDİRİMİ: Silme başarılı olduğunda admin'lere Telegram bildirimi
+    gönderilir. Kullanıcı bilgileri silmeden ÖNCE okunur (sonrasında
+    veritabanında bulunamayacakları için).
+
+    Döndürür:
+        bool: Kullanıcı gerçekten silindiyse True, ID bulunamadıysa False.
+    """
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT 1 FROM users WHERE id = ?", (user_id,))
-    exists = cursor.fetchone() is not None
+    # Bildirim icin kullanici bilgilerini SILMEDEN ONCE oku
+    row = cursor.execute(
+        "SELECT username, first_name, last_name, email FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+
+    exists = row is not None
 
     if exists:
+        alert_sayisi = cursor.execute(
+            "SELECT COUNT(*) FROM alerts WHERE user_id = ?", (user_id,)
+        ).fetchone()[0]
+
         cursor.execute("DELETE FROM alerts WHERE user_id = ?", (user_id,))
         cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
 
     conn.close()
+
+    if exists:
+        username, first_name, last_name, email = row
+        _notify_admins_user_deleted(username, first_name, last_name, email, alert_sayisi)
+
     return exists
+
+
+def _notify_admins_user_deleted(username: str, first_name: str, last_name: str, email: str, alert_sayisi: int):
+    """Bir kullanıcı silindiğinde admine Telegram bildirimi gönderir.
+    bildirim başarısız olsa bile silme işlemi geçerli kalır."""
+    from datetime import datetime
+
+    try:
+        from notifications import send_telegram_message
+
+        admin_ids = get_admin_chat_ids()
+        if not admin_ids:
+            return
+
+        mesaj = (
+            f"🗑️Kullanıcı Hesabı Silindi\n\n"
+            f"Kullanıcı Adı: {username}\n"
+            f"E-posta: {email}\n"
+            f"Silinme zamanı: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+
+        for chat_id in admin_ids:
+            send_telegram_message(chat_id, mesaj)
+
+    except Exception as e:
+        print(f"UYARI: Kullanıcı silme bildirimi gönderilemedi: {e}")
 
 def get_admin_chat_ids() -> list:
     """Admin yetkisine sahip ve Telegram hesabı bağlı olan kullanıcıların chat IDlerini döner. 
@@ -673,6 +727,47 @@ def get_admin_chat_ids() -> list:
     ).fetchall()
     conn.close()
     return [row[0] for row in rows]
+
+def get_weekly_user_report_data() -> dict:
+    """Haftalık admin raporu için sistem genelinde kullanıcı istatistiklerini toplar."""
+    conn = get_connection()
+
+    toplam_kullanici = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    telegram_bagli = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE telegram_chat_id IS NOT NULL"
+    ).fetchone()[0]
+    toplam_alert = conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0]
+    aktif_alert = conn.execute("SELECT COUNT(*) FROM alerts WHERE active = 1").fetchone()[0]
+
+    # Son 7 günde kaydolanlar
+    yeni_kullanicilar = conn.execute("""
+        SELECT username, first_name, last_name, created_at
+        FROM users
+        WHERE created_at >= datetime('now', '-7 days')
+        ORDER BY created_at DESC
+    """).fetchall()
+
+    # Tüm kullanıcıların özeti
+    kullanici_ozeti = conn.execute("""
+        SELECT u.username, u.first_name, u.last_name, u.email,
+               CASE WHEN u.telegram_chat_id IS NOT NULL THEN 1 ELSE 0 END as tg,
+               COUNT(a.id) as alert_sayisi
+        FROM users u
+        LEFT JOIN alerts a ON u.id = a.user_id
+        GROUP BY u.id
+        ORDER BY u.created_at
+    """).fetchall()
+
+    conn.close()
+
+    return {
+        "toplam_kullanici": toplam_kullanici,
+        "telegram_bagli": telegram_bagli,
+        "toplam_alert": toplam_alert,
+        "aktif_alert": aktif_alert,
+        "yeni_kullanicilar": yeni_kullanicilar,
+        "kullanici_ozeti": kullanici_ozeti,
+    }
 
 # Hızlı test 
 if __name__ == "__main__":

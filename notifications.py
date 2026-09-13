@@ -31,6 +31,36 @@ def send_telegram_message(chat_id: str, text: str) -> bool:
         print(f"HATA: Telegram API'sine bağlanılamadı: {e}")
         return False
 
+def send_telegram_document(chat_id: str, file_path: str, caption: str = "") -> bool:
+    if not TELEGRAM_BOT_TOKEN:
+        print("HATA: TELEGRAM_BOT_TOKEN bulunamadı (.env veya st.secrets).")
+        return False
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+
+    try:
+        with open(file_path, "rb") as f:
+            response = requests.post(
+                url,
+                data={"chat_id": chat_id, "caption": caption},
+                files={"document": f},
+                timeout=60,  
+            )
+        result = response.json()
+
+        if result.get("ok"):
+            return True
+        else:
+            print(f"HATA: Telegram dosyası gönderilemedi: {result.get('description')}")
+            return False
+
+    except FileNotFoundError:
+        print(f"HATA: Dosya bulunamadı: {file_path}")
+        return False
+    except requests.exceptions.RequestException as e:
+        print(f"HATA: Telegram API'sine bağlanılamadı: {e}")
+        return False
+
 # Hızlı test 
 if __name__ == "__main__":
     from database import get_telegram_chat_id
