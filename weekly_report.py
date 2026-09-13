@@ -92,8 +92,7 @@ def build_docx_report(output_path: str) -> dict:
     # --- Dipnot ---
     doc.add_paragraph()
     dipnot = doc.add_paragraph(
-        "Bu rapor otomatik olarak oluşturulmuştur. "
-        "BIST Pivot Point Tabanlı Hisse Projeksiyon Sistemi"
+        "Bu rapor otomatik olarak oluşturulmuştur | BIST Pivot Point Tabanlı Hisse Projeksiyon Sistemi ©2026"
     )
     dipnot.runs[0].font.size = Pt(9)
     dipnot.runs[0].font.color.rgb = RGBColor(0x80, 0x80, 0x80)
