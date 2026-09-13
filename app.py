@@ -509,7 +509,8 @@ with tab5:
             "This action cannot be undone."
         )
         confirm_username = st.text_input(
-            "Type your username to confirm deletion:", key="delete_confirm"
+            f"Type '{st.session_state['username']}' (your username) to confirm deletion:",
+            key="delete_confirm",
         )
         if st.button("Permanently Delete My Account"):
             if confirm_username == st.session_state["username"]:
