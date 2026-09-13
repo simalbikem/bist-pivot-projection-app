@@ -368,10 +368,10 @@ def _notify_admins_new_user(username: str, first_name: str, last_name: str, emai
 
         mesaj = (
             f"👤Yeni Kullanıcı Kaydı\n\n"
-            f"Kullanıcı adı: {username}\n"
+            f"Kullanıcı Adı: {username}\n"
             f"Ad-Soyad: {first_name}|{last_name}\n"
             f"E-posta: {email}\n"
-            f"Kayıt zamanı: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+            f"Kayıt Zamanı: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
 
         for chat_id in admin_ids:
