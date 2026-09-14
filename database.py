@@ -647,37 +647,28 @@ def get_all_users_with_stats() -> pd.DataFrame:
     return df
 
 def delete_user_and_data(user_id: int) -> bool:
-    """
-    Bir kullanıcıyı ve TÜM verilerini (alert'leri dahil) kalıcı olarak siler.
-    Önce alert'ler silinir (foreign key ilişkisi gereği), sonra kullanıcının
-    kendisi silinir.
-
-    DÜZELTME NOTU: delete_alert'teki ile aynı sebepten (rowcount'un Turso'da
-    güvenilmez olduğu doğrulandı), rowcount yerine ön-SELECT kontrolü
-    kullanılıyor.
-
-    ADMIN BİLDİRİMİ: Silme başarılı olduğunda admin'lere Telegram bildirimi
-    gönderilir. Kullanıcı bilgileri silmeden ÖNCE okunur (sonrasında
-    veritabanında bulunamayacakları için).
-
-    Döndürür:
-        bool: Kullanıcı gerçekten silindiyse True, ID bulunamadıysa False.
-    """
+    """Bir kullanıcıyı ve TÜM verilerini (alertleri dahil) kalıcı olarak siler."""
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Bildirim icin kullanici bilgilerini SILMEDEN ONCE oku
     row = cursor.execute(
         "SELECT username, first_name, last_name, email FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
 
     exists = row is not None
+    admin_ids = []
+    alert_sayisi = 0
 
     if exists:
         alert_sayisi = cursor.execute(
             "SELECT COUNT(*) FROM alerts WHERE user_id = ?", (user_id,)
         ).fetchone()[0]
+
+        admin_rows = cursor.execute(
+            "SELECT telegram_chat_id FROM users WHERE is_admin = 1 AND telegram_chat_id IS NOT NULL"
+        ).fetchall()
+        admin_ids = [r[0] for r in admin_rows]
 
         cursor.execute("DELETE FROM alerts WHERE user_id = ?", (user_id,))
         cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
@@ -687,28 +678,31 @@ def delete_user_and_data(user_id: int) -> bool:
 
     if exists:
         username, first_name, last_name, email = row
-        _notify_admins_user_deleted(username, first_name, last_name, email, alert_sayisi)
+        _notify_admins_user_deleted(
+            username, first_name, last_name, email, alert_sayisi, admin_ids
+        )
 
     return exists
 
 
-def _notify_admins_user_deleted(username: str, first_name: str, last_name: str, email: str, alert_sayisi: int):
-    """Bir kullanıcı silindiğinde admine Telegram bildirimi gönderir.
-    bildirim başarısız olsa bile silme işlemi geçerli kalır."""
+def _notify_admins_user_deleted(username: str, first_name: str, last_name: str, email: str, alert_sayisi: int, admin_ids: list):
+    """Bir kullanıcı silindiğinde adminlere Telegram bildirimi gönderir."""
     from datetime import datetime
+
+    if not admin_ids:
+        return
 
     try:
         from notifications import send_telegram_message
 
-        admin_ids = get_admin_chat_ids()
-        if not admin_ids:
-            return
-
         mesaj = (
             f"🗑️Kullanıcı Hesabı Silindi\n\n"
             f"Kullanıcı Adı: {username}\n"
-            f"E-posta: {email}\n"
-            f"Silinme zamanı: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+            f"Ad: {first_name}\n"
+            f"Soyad: {last_name}\n"
+            f"E-Posta: {email}\n"
+            f"Silinen Alert Sayısı: {alert_sayisi}\n"
+            f"Silinme Zamanı: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
 
         for chat_id in admin_ids:
@@ -750,8 +744,8 @@ def get_weekly_user_report_data() -> dict:
     # Tüm kullanıcıların özeti
     kullanici_ozeti = conn.execute("""
         SELECT u.username, u.first_name, u.last_name, u.email,
-               CASE WHEN u.telegram_chat_id IS NOT NULL THEN 1 ELSE 0 END as tg,
-               COUNT(a.id) as alert_sayisi
+            CASE WHEN u.telegram_chat_id IS NOT NULL THEN 1 ELSE 0 END as tg,
+            COUNT(a.id) as alert_sayisi
         FROM users u
         LEFT JOIN alerts a ON u.id = a.user_id
         GROUP BY u.id

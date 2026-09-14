@@ -49,8 +49,8 @@ if "tables_initialized" not in st.session_state:
 
 @st.cache_data(ttl=60)
 def cached_get_credentials_dict():
+    """Kimlik bilgilerini 60 saniye önbelleğe alır."""
     return get_credentials_dict()
-
 
 authenticator = stauth.Authenticate(
     cached_get_credentials_dict(),
@@ -445,6 +445,7 @@ if user_is_admin:
                         if st.button("Delete User", key=f"admin_delete_{row['id']}"):
                             delete_user_and_data(int(row["id"]))
                             cached_get_all_users_with_stats.clear()
+                            cached_get_credentials_dict.clear()
                             st.success(f"Deleted user: {row['username']}")
                             st.rerun()
                     else:
@@ -452,9 +453,9 @@ if user_is_admin:
 
 with tab5:
     st.subheader("🔔My Alerts")
-
-    if "user_id" not in st.session_state:
+    if st.session_state.get("user_id_for_username") != st.session_state["username"]:
         st.session_state["user_id"] = get_user_id(st.session_state["username"])
+        st.session_state["user_id_for_username"] = st.session_state["username"]
     user_id = st.session_state["user_id"]
 
     # --- Telegram bağlantısı ---
@@ -513,12 +514,18 @@ with tab5:
             key="delete_confirm",
         )
         if st.button("Permanently Delete My Account"):
+            
             if confirm_username == st.session_state["username"]:
                 delete_user_and_data(user_id)
-                st.success("Your account has been deleted. You will be logged out.")
+                cached_get_credentials_dict.clear()
+                authenticator.cookie_controller.delete_cookie()
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
-                st.rerun()
+                st.success(
+                    "Your account has been deleted. Please refresh this page (F5)."
+                )
+                st.stop()
+            
             else:
                 st.error("Username does not match. Account not deleted.")
 
