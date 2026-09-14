@@ -614,3 +614,70 @@ def test_get_connection_use_turso_is_case_insensitive(monkeypatch):
     conn = database.get_connection()
 
     assert isinstance(conn, FakeLibsqlConn)
+
+# ---------------------------------------------------------
+# Silme akışı regresyon testleri
+# ---------------------------------------------------------
+def test_delete_user_notifies_even_when_last_admin_deletes_self(temp_db, monkeypatch):
+    """REGRESYON TESTI: Sistemdeki TEK admin kendi hesabını sildiğinde de bildirim gönderilmelidir."""
+    create_user("soloadmin", "Pass1234", "solo@example.com", "Solo", "Admin")
+    uid = get_user_id("soloadmin")
+    update_telegram_chat_id("soloadmin", "999")
+
+    conn = database.get_connection()
+    conn.execute("UPDATE users SET is_admin = 1 WHERE username = 'soloadmin'")
+    conn.commit()
+    conn.close()
+
+    gonderilen = []
+    monkeypatch.setattr(
+        "notifications.send_telegram_message",
+        lambda chat_id, text: gonderilen.append((chat_id, text)) or True,
+    )
+
+    assert delete_user_and_data(uid) is True
+
+    # Tek admin kendini silse bile bildirim GITMELI
+    assert len(gonderilen) == 1
+    assert gonderilen[0][0] == "999"
+    assert "soloadmin" in gonderilen[0][1]
+
+def test_delete_user_notification_contains_no_password_hash(temp_db, monkeypatch):
+    """GUVENLIK: Bildirim metninde şifre hashi ASLA yer almamalı."""
+    create_user("guvenlik", "SuperGizli123", "guv@example.com", "Guv", "Enlik")
+    uid = get_user_id("guvenlik")
+    update_telegram_chat_id("guvenlik", "111")
+
+    conn = database.get_connection()
+    conn.execute("UPDATE users SET is_admin = 1 WHERE username = 'guvenlik'")
+    conn.commit()
+    hashed = conn.execute(
+        "SELECT hashed_password FROM users WHERE username = 'guvenlik'"
+    ).fetchone()[0]
+    conn.close()
+
+    gonderilen = []
+    monkeypatch.setattr(
+        "notifications.send_telegram_message",
+        lambda chat_id, text: gonderilen.append(text) or True,
+    )
+
+    delete_user_and_data(uid)
+
+    assert len(gonderilen) == 1
+    assert hashed not in gonderilen[0]
+    assert "SuperGizli123" not in gonderilen[0]
+
+def test_delete_user_and_data_deletes_only_target_user(temp_db):
+    """REGRESYON TESTI: Verilen ID'ye SADECE o kullanıcı silinmeli."""
+    create_user("hedef", "Pass1234", "hedef@example.com", "He", "Def")
+    create_user("digerA", "Pass1234", "a@example.com", "Di", "GerA")
+    create_user("digerB", "Pass1234", "b@example.com", "Di", "GerB")
+
+    hedef_id = get_user_id("hedef")
+    delete_user_and_data(hedef_id)
+
+    creds = get_credentials_dict()["usernames"]
+    assert "hedef" not in creds
+    assert "digerA" in creds
+    assert "digerB" in creds
