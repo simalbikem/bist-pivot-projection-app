@@ -681,3 +681,24 @@ def test_delete_user_and_data_deletes_only_target_user(temp_db):
     assert "hedef" not in creds
     assert "digerA" in creds
     assert "digerB" in creds
+
+def test_active_alerts_excludes_deleted_users_alerts(temp_db):
+    """REGRESYON TESTI: Bir kullanıcı silindiğinde, alert_checkerın kullandığı sorgu o kullanıcının alertlerini ARTIK GETİRMEMELİ."""
+    create_user("silinecek", "Pass1234", "sil@example.com", "Si", "Linecek")
+    create_user("kalacak", "Pass1234", "kal@example.com", "Ka", "Lacak")
+    uid_sil = get_user_id("silinecek")
+    uid_kal = get_user_id("kalacak")
+    update_telegram_chat_id("silinecek", "111")
+    update_telegram_chat_id("kalacak", "222")
+
+    create_alert(uid_sil, "THYAO.IS", "classic", "daily", "R1", "touch")
+    create_alert(uid_kal, "AKBNK.IS", "classic", "daily", "PP", "touch")
+
+    assert len(get_all_active_alerts_with_contact()) == 2
+
+    delete_user_and_data(uid_sil)
+
+    aktif = get_all_active_alerts_with_contact()
+    assert len(aktif) == 1
+    assert aktif.iloc[0]["ticker"] == "AKBNK.IS"
+    assert aktif.iloc[0]["username"] == "kalacak"

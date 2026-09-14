@@ -49,7 +49,8 @@ if "tables_initialized" not in st.session_state:
 
 @st.cache_data(ttl=60)
 def cached_get_credentials_dict():
-    """Kimlik bilgilerini 60 saniye önbelleğe alır."""
+    """Kimlik bilgilerini 60 saniye önbelleğe alır.
+    DİKKAT: Kullanıcı ekleme/silme yapan her yerde .clear() ile temizlenmeli."""
     return get_credentials_dict()
 
 authenticator = stauth.Authenticate(
@@ -153,6 +154,24 @@ def cached_get_alerts_for_user(user_id: int) -> pd.DataFrame:
 @st.cache_data(ttl=15)
 def cached_get_all_users_with_stats() -> pd.DataFrame:
     return get_all_users_with_stats()
+
+
+def clear_all_user_caches():
+    """
+    Kullanıcıya ait TÜM önbellekleri temizler.
+
+    Bir kullanıcı silindiğinde/eklendiğinde çağrılmalıdır. Tek tek
+    temizlemek yerine bu yardımcı fonksiyonu kullanmak, ileride yeni
+    bir önbellek eklendiğinde bir yerde unutulma riskini azaltır -
+    credentials önbelleğinin unutulması gerçek kullanımda silinmiş
+    kullanıcının 60 saniye boyunca giriş yapabilmesine yol açmıştı.
+    """
+    cached_get_credentials_dict.clear()
+    cached_get_all_users_with_stats.clear()
+    cached_is_user_admin.clear()
+    cached_get_alerts_for_user.clear()
+    cached_get_telegram_chat_id.clear()
+
 
 def reconstruct_zones_from_db(df_zones: pd.DataFrame) -> list:
     zones = []
@@ -444,8 +463,7 @@ if user_is_admin:
                     if row["username"] != st.session_state["username"]:
                         if st.button("Delete User", key=f"admin_delete_{row['id']}"):
                             delete_user_and_data(int(row["id"]))
-                            cached_get_all_users_with_stats.clear()
-                            cached_get_credentials_dict.clear()
+                            clear_all_user_caches()
                             st.success(f"Deleted user: {row['username']}")
                             st.rerun()
                     else:
@@ -514,10 +532,9 @@ with tab5:
             key="delete_confirm",
         )
         if st.button("Permanently Delete My Account"):
-            
             if confirm_username == st.session_state["username"]:
                 delete_user_and_data(user_id)
-                cached_get_credentials_dict.clear()
+                clear_all_user_caches()
                 authenticator.cookie_controller.delete_cookie()
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
