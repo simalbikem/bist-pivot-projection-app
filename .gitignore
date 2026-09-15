@@ -7,3 +7,11 @@ __pycache__/
 *.pyc
 alert_checker.log
 .pytest_cache/
+check_*.py
+restore_*.py
+diagnose_*.py
+temp_*.py
+verify_*.py
+clean_*.py
+test_weekly_report_prod.py
+measure_speed.py
