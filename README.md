@@ -9,7 +9,7 @@ Borsa İstanbul (BIST100) hisseleri için pivot-nokta tabanlı teknik analiz, co
 - **5 Pivot Yöntemi:** Classic, Fibonacci, Camarilla, DeMark, Woodie — formüller harici kaynaklarla doğrulanmıştır.
 - **Confluence Analizi:** Farklı yöntemlerin birbirine yakın düştüğü, istatistiksel olarak güçlü destek/direnç bölgelerinin tespiti yapılabilmektedir.
 - **Backtest İstatistikleri:** Her seviye için geçmiş "touch" ve "break" olasılıkları, yönlü PP kırılma ayrımı dahil edilmiştir.
-- **Sistem Bildirimleri:** Yeni kullanıcı kaydı, hesap silme ve haftalık kullanıcı raporu admin(lere) Telegram üzerinden otomatik bildirilir (haftalık rapor Word/.docx dosyası olarak gönderilir).
+- **Sistem Bildirimleri:** Yeni kullanıcı kaydı, hesap silme ve haftalık kullanıcı raporu admine Telegram üzerinden otomatik bildirilir (haftalık rapor Word/.docx dosyası olarak gönderilir).
 - **Çoklu Zaman Dilimi:** Günlük, haftalık, aylık analiz desteği bulunmaktadır.
 - **BIST100:** Tüm endeks bileşenleri için veriler otomatik güncellenmektedir.
 - **Screener:** Touch/break olasılığına veya confluence gücüne göre hisseler taranabilmektedir.
@@ -115,7 +115,7 @@ pytest tests/ -v
 Proje, GitHub Actions ile üç zamanlanmış görev çalıştırır:
 - **Update Data:** Her gün piyasa kapanışından sonra, 100 hissenin backtest ve confluence verilerini yeniler.
 - **Alert Checker:** Piyasanın açık olduğu saatlerde 15 dakikada bir, kullanıcı alertlerini kontrol edip gerektiğinde Telegram bildirimi gönderir.
-- **Weekly Report:** Her hafta Pazartesi sabahı, tüm kullanıcıların özet raporunu Word (.docx) dosyası olarak admin(lere) Telegram üzerinden gönderir.
+- **Weekly Report:** Her hafta Pazartesi sabahı, tüm kullanıcıların özet raporunu .docx dosyası olarak admine Telegram üzerinden gönderir.
 
 ---
 
